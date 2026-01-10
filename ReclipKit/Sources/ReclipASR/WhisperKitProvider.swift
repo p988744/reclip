@@ -31,12 +31,60 @@ public final class WhisperKitProvider: ASRProvider, @unchecked Sendable {
         self.computeOptions = computeOptions
     }
 
-    /// 載入模型
+    /// 下載進度詳細資訊
+    public struct DownloadProgress: Sendable {
+        public let fractionCompleted: Double
+        public let isDownloading: Bool  // true = downloading, false = loading model
+
+        public var formattedProgress: String {
+            if !isDownloading {
+                return "載入模型到記憶體中..."
+            }
+            let percent = Int(fractionCompleted / 0.8 * 100)
+            return "下載模型中... \(min(percent, 100))%"
+        }
+    }
+
+    /// 載入模型（無進度回調）
     public func loadModel() async throws {
+        try await loadModel { _ in }
+    }
+
+    /// 載入模型（帶簡單進度回調）
+    /// - Parameter progress: 下載進度回調 (0.0 - 1.0)
+    public func loadModel(progress: @escaping @Sendable (Double) -> Void) async throws {
+        try await loadModelWithDetails { detailedProgress in
+            progress(detailedProgress.fractionCompleted)
+        }
+    }
+
+    /// 載入模型（帶詳細進度回調）
+    /// - Parameter progress: 下載進度回調
+    public func loadModelWithDetails(progress: @escaping @Sendable (DownloadProgress) -> Void) async throws {
+        // 先下載模型（如果尚未下載）
+        progress(DownloadProgress(fractionCompleted: 0, isDownloading: true))
+
+        let modelFolder = try await WhisperKit.download(
+            variant: modelName,
+            progressCallback: { downloadProgress in
+                let detailedProgress = DownloadProgress(
+                    fractionCompleted: downloadProgress.fractionCompleted * 0.8,
+                    isDownloading: true
+                )
+                progress(detailedProgress)
+            }
+        )
+
+        // 載入模型階段
+        progress(DownloadProgress(fractionCompleted: 0.8, isDownloading: false))
+
+        // 載入模型
         whisperKit = try await WhisperKit(
-            model: modelName,
+            modelFolder: modelFolder.path,
             computeOptions: computeOptions
         )
+
+        progress(DownloadProgress(fractionCompleted: 1.0, isDownloading: false))
     }
 
     /// 卸載模型（釋放記憶體）
@@ -191,7 +239,7 @@ public final class WhisperKitProvider: ASRProvider, @unchecked Sendable {
             for segment in result.segments {
                 let words: [WordSegment] = (segment.words ?? []).map { word in
                     WordSegment(
-                        word: word.word,
+                        word: stripSpecialTokens(word.word),
                         start: TimeInterval(word.start),
                         end: TimeInterval(word.end),
                         confidence: Double(word.probability),
@@ -199,12 +247,18 @@ public final class WhisperKitProvider: ASRProvider, @unchecked Sendable {
                     )
                 }
 
+                let cleanedText = stripSpecialTokens(segment.text)
+                    .trimmingCharacters(in: .whitespaces)
+
+                // 跳過空白段落
+                guard !cleanedText.isEmpty else { continue }
+
                 let seg = Segment(
-                    text: segment.text.trimmingCharacters(in: .whitespaces),
+                    text: cleanedText,
                     start: TimeInterval(segment.start),
                     end: TimeInterval(segment.end),
                     speaker: nil,
-                    words: words
+                    words: words.filter { !$0.word.isEmpty }
                 )
 
                 segments.append(seg)
@@ -217,5 +271,12 @@ public final class WhisperKitProvider: ASRProvider, @unchecked Sendable {
             language: language,
             duration: totalDuration
         )
+    }
+
+    /// 移除 Whisper 特殊 token
+    private func stripSpecialTokens(_ text: String) -> String {
+        // 移除 <|...|> 格式的 token
+        let pattern = #"<\|[^|]+\|>"#
+        return text.replacingOccurrences(of: pattern, with: "", options: .regularExpression)
     }
 }

@@ -1,10 +1,29 @@
 import SwiftUI
 import ReclipCore
+#if os(macOS)
+import AppKit
+#endif
 
 /// 主內容視圖
 public struct ContentView: View {
     @StateObject private var viewModel = ContentViewModel()
     @Namespace private var namespace
+
+    @State private var selectedTab: EditorTab = .waveform
+
+    enum EditorTab: String, CaseIterable {
+        case waveform = "波形編輯"
+        case transcript = "逐字稿"
+        case analysis = "AI 分析"
+
+        var icon: String {
+            switch self {
+            case .waveform: return "waveform"
+            case .transcript: return "text.bubble"
+            case .analysis: return "sparkles"
+            }
+        }
+    }
 
     public init() {}
 
@@ -19,16 +38,13 @@ public struct ContentView: View {
         } detail: {
             // 主內容
             if let project = viewModel.selectedProject {
-                ProjectDetailView(project: project, viewModel: viewModel)
+                projectDetailContent(project)
             } else {
                 emptyState
             }
         }
         .toolbar {
             toolbarContent
-        }
-        .sheet(isPresented: $viewModel.showSettings) {
-            SettingsView()
         }
         .fileImporter(
             isPresented: $viewModel.showFileImporter,
@@ -37,6 +53,89 @@ public struct ContentView: View {
         ) { result in
             viewModel.handleFileImport(result)
         }
+        .alert("錯誤", isPresented: $viewModel.showError) {
+            Button("確定", role: .cancel) {}
+        } message: {
+            Text(viewModel.error?.localizedDescription ?? "發生未知錯誤")
+        }
+    }
+
+    // MARK: - Project Detail Content
+
+    @ViewBuilder
+    private func projectDetailContent(_ project: Project) -> some View {
+        VStack(spacing: 0) {
+            // 頂部標籤選擇
+            tabPicker
+
+            Divider()
+
+            // 內容區
+            switch selectedTab {
+            case .waveform:
+                AudioEditorView(viewModel: viewModel)
+            case .transcript:
+                TranscriptTab(viewModel: viewModel)
+            case .analysis:
+                ProjectDetailView(project: project, viewModel: viewModel)
+            }
+        }
+        .navigationTitle(project.name)
+    }
+
+    // MARK: - Tab Picker
+
+    private var tabPicker: some View {
+        HStack(spacing: 0) {
+            ForEach(EditorTab.allCases, id: \.self) { tab in
+                Button {
+                    withAnimation(.easeInOut(duration: 0.2)) {
+                        selectedTab = tab
+                    }
+                } label: {
+                    HStack(spacing: 8) {
+                        Image(systemName: tab.icon)
+                        Text(tab.rawValue)
+                    }
+                    .font(.subheadline.weight(selectedTab == tab ? .semibold : .regular))
+                    .foregroundStyle(selectedTab == tab ? .primary : .secondary)
+                    .padding(.horizontal, 20)
+                    .padding(.vertical, 12)
+                    .background {
+                        if selectedTab == tab {
+                            RoundedRectangle(cornerRadius: 8)
+                                .fill(.ultraThinMaterial)
+                                .matchedGeometryEffect(id: "tabIndicator", in: namespace)
+                        }
+                    }
+                }
+                .buttonStyle(.borderless)
+            }
+
+            Spacer()
+
+            // 迷你播放控制
+            if viewModel.isAudioLoaded {
+                CompactPlaybackControls(
+                    isPlaying: Binding(
+                        get: { viewModel.isPlaying },
+                        set: { _ in }
+                    ),
+                    onToggle: { viewModel.togglePlayPause() },
+                    onSkipBackward: { Task { await viewModel.skipBackward() } },
+                    onSkipForward: { Task { await viewModel.skipForward() } }
+                )
+
+                MiniTimeDisplay(
+                    currentTime: viewModel.currentTime,
+                    duration: viewModel.duration
+                )
+                .padding(.leading, 12)
+            }
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 8)
+        .background(.ultraThinMaterial)
     }
 
     // MARK: - Empty State
@@ -92,9 +191,12 @@ public struct ContentView: View {
                 viewModel.showFileImporter = true
             }
 
+            #if os(macOS)
             Button("設定", systemImage: "gearshape") {
-                viewModel.showSettings = true
+                NSApp.sendAction(Selector(("showSettingsWindow:")), to: nil, from: nil)
             }
+            .keyboardShortcut(",", modifiers: .command)
+            #endif
         }
     }
 }
@@ -175,7 +277,6 @@ struct ProjectDetailView: View {
             }
             .padding()
         }
-        .navigationTitle(project.name)
     }
 
     private var audioInfoCard: some View {
@@ -341,6 +442,122 @@ struct ProjectDetailView: View {
         let mins = Int(seconds) / 60
         let secs = Int(seconds) % 60
         return String(format: "%d:%02d", mins, secs)
+    }
+}
+
+// MARK: - Transcript Tab
+
+struct TranscriptTab: View {
+    @ObservedObject var viewModel: ContentViewModel
+
+    var body: some View {
+        VStack(spacing: 16) {
+            if let transcript = viewModel.transcript {
+                // 逐字稿顯示
+                TranscriptView(
+                    transcript: transcript,
+                    currentTime: viewModel.currentTime,
+                    onSeek: { time in
+                        Task {
+                            await viewModel.seek(to: time)
+                        }
+                    }
+                )
+            } else {
+                // 尚無逐字稿
+                transcriptionEmptyState
+            }
+        }
+        .padding()
+    }
+
+    private var transcriptionEmptyState: some View {
+        VStack(spacing: 24) {
+            Image(systemName: "text.bubble")
+                .font(.system(size: 60))
+                .foregroundStyle(.tertiary)
+
+            VStack(spacing: 8) {
+                Text("尚無逐字稿")
+                    .font(.title2.weight(.semibold))
+
+                Text("點擊下方按鈕開始轉錄音訊")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+            }
+
+            // 語言選擇
+            HStack(spacing: 12) {
+                Text("語言：")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+
+                Picker("語言", selection: $viewModel.selectedLanguage) {
+                    ForEach(viewModel.supportedLanguages, id: \.self) { lang in
+                        Text(languageName(lang)).tag(lang)
+                    }
+                }
+                .pickerStyle(.menu)
+                .frame(width: 150)
+            }
+
+            // 轉錄按鈕
+            Button {
+                Task {
+                    await viewModel.transcribe()
+                }
+            } label: {
+                HStack(spacing: 8) {
+                    if viewModel.isProcessing {
+                        ProgressView()
+                            .scaleEffect(0.8)
+                    } else {
+                        Image(systemName: "waveform")
+                    }
+                    Text(viewModel.isProcessing ? "處理中..." : "開始轉錄")
+                }
+            }
+            .buttonStyle(.reclipGlass(tint: .blue))
+            .disabled(viewModel.isProcessing || !viewModel.isAudioLoaded)
+
+            // 進度條
+            if viewModel.isProcessing {
+                VStack(spacing: 8) {
+                    ProgressView(value: viewModel.progress)
+                        .frame(width: 300)
+
+                    Text(viewModel.progressLabel)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
+
+            // 模型狀態
+            if !viewModel.isProcessing && !viewModel.isModelLoaded {
+                Text("首次轉錄會自動下載 WhisperKit 模型（約 1GB）")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+
+    private func languageName(_ code: String) -> String {
+        let names: [String: String] = [
+            "zh": "中文",
+            "en": "English",
+            "ja": "日本語",
+            "ko": "한국어",
+            "es": "Español",
+            "fr": "Français",
+            "de": "Deutsch",
+            "it": "Italiano",
+            "pt": "Português",
+            "ru": "Русский",
+            "ar": "العربية",
+            "hi": "हिन्दी"
+        ]
+        return names[code] ?? code
     }
 }
 

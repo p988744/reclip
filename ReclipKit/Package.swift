@@ -66,13 +66,19 @@ let package = Package(
         // UI components (SwiftUI + Liquid Glass)
         .target(
             name: "ReclipUI",
-            dependencies: ["ReclipCore"]
+            dependencies: [
+                "ReclipCore",
+                "ReclipASR",
+            ]
         ),
 
         // Tests
         .testTarget(
             name: "ReclipCoreTests",
-            dependencies: ["ReclipCore"]
+            dependencies: [
+                "ReclipCore",
+                "ReclipASR",
+            ]
         ),
     ]
 )

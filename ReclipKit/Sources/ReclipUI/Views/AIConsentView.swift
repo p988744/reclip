@@ -108,7 +108,7 @@ public struct AIConsentView: View {
             }
         }
         .padding(24)
-        .frame(width: 480, height: 680)
+        .frame(minWidth: 400, idealWidth: 480, minHeight: 500)
     }
 
     private func privacyBullet(_ text: String) -> some View {

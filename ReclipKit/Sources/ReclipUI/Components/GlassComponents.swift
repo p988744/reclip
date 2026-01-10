@@ -107,9 +107,10 @@ public struct GlassCard<Content: View>: View {
 
 // MARK: - Glass Button
 
-/// 玻璃按鈕樣式
+/// 玻璃按鈕樣式 - 基於原生 borderedProminent 風格 + Liquid Glass
 public struct GlassButtonStyle: ButtonStyle {
     @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
+    @Environment(\.controlSize) private var controlSize
 
     let tint: Color?
 
@@ -117,23 +118,41 @@ public struct GlassButtonStyle: ButtonStyle {
         self.tint = tint
     }
 
+    private var horizontalPadding: CGFloat {
+        switch controlSize {
+        case .mini: return 8
+        case .small: return 12
+        case .large, .extraLarge: return 20
+        default: return 16
+        }
+    }
+
+    private var verticalPadding: CGFloat {
+        switch controlSize {
+        case .mini: return 4
+        case .small: return 6
+        case .large, .extraLarge: return 12
+        default: return 8
+        }
+    }
+
     public func makeBody(configuration: Configuration) -> some View {
         configuration.label
-            .font(.body.weight(.semibold))  // HIG: 使用粗體增加可讀性
-            .padding(.horizontal, 20)
-            .padding(.vertical, 12)
+            .font(.body.weight(.medium))
+            .padding(.horizontal, horizontalPadding)
+            .padding(.vertical, verticalPadding)
             .background {
-                Capsule()
+                RoundedRectangle(cornerRadius: 8)
                     .fill(.regularMaterial)
             }
             .glassEffect(
                 reduceTransparency
                     ? .identity
                     : (tint.map { .regular.tint($0).interactive() } ?? .regular.interactive()),
-                in: .capsule
+                in: RoundedRectangle(cornerRadius: 8)
             )
-            .scaleEffect(configuration.isPressed ? 0.96 : 1.0)
-            .animation(.bouncy(duration: 0.2), value: configuration.isPressed)  // HIG: 使用 bouncy
+            .opacity(configuration.isPressed ? 0.8 : 1.0)
+            .animation(.easeInOut(duration: 0.15), value: configuration.isPressed)
     }
 }
 

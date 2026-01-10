@@ -1,101 +1,242 @@
 import SwiftUI
 import ReclipCore
+import ReclipASR
 
 /// 設定視圖
 public struct SettingsView: View {
-    @Environment(\.dismiss) private var dismiss
     @StateObject private var settings = AppSettings.shared
-
-    @State private var selectedTab: SettingsTab = .asr
 
     public init() {}
 
     public var body: some View {
-        NavigationStack {
-            TabView(selection: $selectedTab) {
-                // ASR 設定
-                ASRSettingsTab(settings: settings)
-                    .tabItem {
-                        Label("語音辨識", systemImage: "waveform")
-                    }
-                    .tag(SettingsTab.asr)
-
-                // LLM 設定
-                LLMSettingsTab(settings: settings)
-                    .tabItem {
-                        Label("AI 分析", systemImage: "sparkles")
-                    }
-                    .tag(SettingsTab.llm)
-
-                // 編輯器設定
-                EditorSettingsTab(settings: settings)
-                    .tabItem {
-                        Label("編輯器", systemImage: "scissors")
-                    }
-                    .tag(SettingsTab.editor)
-
-                // 同步設定
-                SyncSettingsTab(settings: settings)
-                    .tabItem {
-                        Label("同步", systemImage: "icloud")
-                    }
-                    .tag(SettingsTab.sync)
-            }
-            .navigationTitle("設定")
-            .toolbar {
-                ToolbarItem(placement: .confirmationAction) {
-                    Button("完成") {
-                        dismiss()
-                    }
+        TabView {
+            // ASR 設定
+            ASRSettingsTab(settings: settings)
+                .tabItem {
+                    Label("語音辨識", systemImage: "waveform")
                 }
-            }
+
+            // LLM 設定
+            LLMSettingsTab(settings: settings)
+                .tabItem {
+                    Label("AI 分析", systemImage: "sparkles")
+                }
+
+            // 編輯器設定
+            EditorSettingsTab(settings: settings)
+                .tabItem {
+                    Label("編輯器", systemImage: "scissors")
+                }
+
+            // 同步設定
+            SyncSettingsTab(settings: settings)
+                .tabItem {
+                    Label("同步", systemImage: "icloud")
+                }
         }
-        .frame(width: 500, height: 400)
     }
 }
 
-enum SettingsTab {
-    case asr, llm, editor, sync
-}
 
 // MARK: - ASR Settings Tab
 
 struct ASRSettingsTab: View {
     @ObservedObject var settings: AppSettings
 
+    @State private var models: [ModelDownloader.ModelDetails] = []
+    @State private var isLoading: Bool = true
+    @State private var downloadingModel: String?
+    @State private var downloadProgress: Double = 0
+    @State private var totalSize: Int64 = 0
+    @State private var showDeleteConfirmation: Bool = false
+    @State private var modelToDelete: String?
+
     var body: some View {
         Form {
-            Section("Whisper 模型") {
-                Picker("模型大小", selection: $settings.whisperModel) {
-                    ForEach(WhisperModel.allCases) { model in
-                        HStack {
-                            Text(model.displayName)
-                            Spacer()
-                            Text(model.approximateSize)
-                                .foregroundStyle(.secondary)
-                        }
-                        .tag(model)
-                    }
-                }
-
+            // 語言設定
+            Section("轉錄設定") {
                 Picker("語言", selection: $settings.asrLanguage) {
                     Text("中文").tag("zh")
                     Text("English").tag("en")
                     Text("日本語").tag("ja")
                     Text("한국어").tag("ko")
+                    Text("Español").tag("es")
+                    Text("Français").tag("fr")
+                    Text("Deutsch").tag("de")
                 }
 
                 Toggle("說話者分離", isOn: $settings.enableDiarization)
             }
 
+            // 模型管理
             Section {
-                Text("WhisperKit 會在首次使用時下載模型，較大的模型需要更多 VRAM 但準確度更高。")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+                if isLoading {
+                    HStack {
+                        ProgressView()
+                            .scaleEffect(0.8)
+                        Text("載入模型列表...")
+                            .foregroundStyle(.secondary)
+                    }
+                } else {
+                    ForEach(models) { model in
+                        ModelRow(
+                            model: model,
+                            isDownloading: downloadingModel == model.name,
+                            downloadProgress: downloadingModel == model.name ? downloadProgress : 0,
+                            onDownload: { downloadModel(model.name) },
+                            onDelete: {
+                                modelToDelete = model.name
+                                showDeleteConfirmation = true
+                            }
+                        )
+                    }
+                }
+            } header: {
+                HStack {
+                    Text("WhisperKit 模型")
+                    Spacer()
+                    if totalSize > 0 {
+                        Text("已使用 \(ModelDownloader.formatSize(totalSize))")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+            } footer: {
+                Text("較大的模型準確度更高但需要更多記憶體和處理時間。建議使用 Large V3 以獲得最佳中文辨識效果。")
             }
         }
         .formStyle(.grouped)
         .padding()
+        .task {
+            await loadModels()
+        }
+        .alert("刪除模型", isPresented: $showDeleteConfirmation) {
+            Button("取消", role: .cancel) {
+                modelToDelete = nil
+            }
+            Button("刪除", role: .destructive) {
+                if let model = modelToDelete {
+                    deleteModel(model)
+                }
+            }
+        } message: {
+            Text("確定要刪除此模型嗎？下次使用時需要重新下載。")
+        }
+    }
+
+    private func loadModels() async {
+        isLoading = true
+        models = await ModelDownloader.allModelDetails()
+        totalSize = ModelDownloader.totalDownloadedSize()
+        isLoading = false
+    }
+
+    private func downloadModel(_ name: String) {
+        guard downloadingModel == nil else { return }
+
+        downloadingModel = name
+        downloadProgress = 0
+
+        Task {
+            do {
+                _ = try await ModelDownloader.downloadModel(name) { progress in
+                    Task { @MainActor in
+                        self.downloadProgress = progress
+                    }
+                }
+
+                await loadModels()
+            } catch {
+                print("Download error: \(error)")
+            }
+
+            await MainActor.run {
+                downloadingModel = nil
+                downloadProgress = 0
+            }
+        }
+    }
+
+    private func deleteModel(_ name: String) {
+        do {
+            try ModelDownloader.deleteModel(name)
+            Task {
+                await loadModels()
+            }
+        } catch {
+            print("Delete error: \(error)")
+        }
+        modelToDelete = nil
+    }
+}
+
+// MARK: - Model Row
+
+struct ModelRow: View {
+    let model: ModelDownloader.ModelDetails
+    let isDownloading: Bool
+    let downloadProgress: Double
+    let onDownload: () -> Void
+    let onDelete: () -> Void
+
+    var body: some View {
+        HStack(spacing: 12) {
+            // 模型資訊
+            VStack(alignment: .leading, spacing: 4) {
+                HStack(spacing: 8) {
+                    Text(model.displayName)
+                        .font(.body)
+
+                    if model.isDownloaded {
+                        Image(systemName: "checkmark.circle.fill")
+                            .foregroundStyle(.green)
+                            .font(.caption)
+                    }
+                }
+
+                HStack(spacing: 8) {
+                    if let size = model.sizeOnDisk {
+                        Text(ModelDownloader.formatSize(size))
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    } else {
+                        Text(model.estimatedSize)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+            }
+
+            Spacer()
+
+            // 下載進度或操作按鈕
+            if isDownloading {
+                HStack(spacing: 8) {
+                    ProgressView(value: downloadProgress)
+                        .frame(width: 80)
+
+                    Text("\(Int(downloadProgress * 100))%")
+                        .font(.caption.monospacedDigit())
+                        .foregroundStyle(.secondary)
+                        .frame(width: 40)
+                }
+            } else if model.isDownloaded {
+                Button(role: .destructive) {
+                    onDelete()
+                } label: {
+                    Image(systemName: "trash")
+                }
+                .buttonStyle(.borderless)
+            } else {
+                Button {
+                    onDownload()
+                } label: {
+                    Label("下載", systemImage: "arrow.down.circle")
+                }
+                .buttonStyle(.borderless)
+            }
+        }
+        .padding(.vertical, 4)
     }
 }
 

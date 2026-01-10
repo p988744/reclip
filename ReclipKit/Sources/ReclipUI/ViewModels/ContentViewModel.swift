@@ -2,6 +2,7 @@ import Foundation
 import SwiftUI
 import SwiftData
 import ReclipCore
+import ReclipASR
 
 /// 主內容視圖模型
 @MainActor
@@ -16,34 +17,74 @@ public class ContentViewModel: ObservableObject {
     @Published public var progressLabel: String = ""
 
     @Published public var waveformSamples: [Float] = []
-    @Published public var currentTime: TimeInterval = 0
+    @Published public var waveformDuration: TimeInterval = 0
+    @Published public var isLoadingWaveform: Bool = false
 
     @Published public var transcript: TranscriptResult?
     @Published public var analysisResult: AnalysisResult?
     @Published public var editReport: EditReport?
 
-    @Published public var showSettings: Bool = false
     @Published public var showFileImporter: Bool = false
 
     @Published public var error: Error?
     @Published public var showError: Bool = false
 
+    // MARK: - Audio Player Properties
+
+    @Published public private(set) var isPlaying: Bool = false
+    @Published public private(set) var currentTime: TimeInterval = 0
+    @Published public private(set) var duration: TimeInterval = 0
+    @Published public var playbackRate: Float = 1.0 {
+        didSet {
+            audioPlayer.playbackRate = playbackRate
+        }
+    }
+    @Published public var volume: Float = 1.0 {
+        didSet {
+            audioPlayer.volume = volume
+        }
+    }
+    @Published public private(set) var isAudioLoaded: Bool = false
+
+    // MARK: - ASR Properties
+
+    @Published public private(set) var isModelLoaded: Bool = false
+    @Published public private(set) var isLoadingModel: Bool = false
+    @Published public var selectedLanguage: String = "zh"
+
+    // MARK: - Edit Regions
+
+    @Published public var editRegions: [EditRegion] = []
+    @Published public var selectedEditRegionID: UUID?
+
     // MARK: - Dependencies
 
     private var modelContext: ModelContext?
+    private let audioPlayer = AudioPlayer()
+    private var currentAudioURL: URL?
+    private let asrProvider: WhisperKitProvider
 
     // MARK: - Initialization
 
-    public init() {
-        // 初始化時載入專案
+    public init(modelName: String = "large-v3") {
+        self.asrProvider = WhisperKitProvider(modelName: modelName)
+        setupAudioPlayerBindings()
         loadProjects()
+    }
+
+    // MARK: - Audio Player Setup
+
+    private func setupAudioPlayerBindings() {
+        audioPlayer.onTimeUpdate = { [weak self] time in
+            Task { @MainActor in
+                self?.currentTime = time
+            }
+        }
     }
 
     // MARK: - Project Management
 
     public func loadProjects() {
-        // 實際實作會從 SwiftData 載入
-        // 這裡先用模擬資料
         projects = []
     }
 
@@ -63,7 +104,6 @@ public class ContentViewModel: ObservableObject {
 
     public func importAudio(from url: URL) async {
         do {
-            // 開始存取安全範圍資源
             guard url.startAccessingSecurityScopedResource() else {
                 throw ImportError.accessDenied
             }
@@ -75,20 +115,22 @@ public class ContentViewModel: ObservableObject {
                 audioFileName: url.lastPathComponent
             )
 
-            // 載入音訊資訊
-            // TODO: 使用 AudioEditor 取得實際資訊
-            project.duration = 0
-            project.sampleRate = 48000
-            project.channels = 1
+            // 取得音訊資訊
+            let audioEditor = AudioEditor()
+            let audioInfo = try await audioEditor.getAudioInfo(url: url)
 
-            // 複製到 iCloud 容器
-            // TODO: 實際複製檔案
+            project.duration = audioInfo.duration
+            project.sampleRate = audioInfo.sampleRate
+            project.channels = audioInfo.channelCount
+
+            // 儲存 URL（實際應用中會複製到 iCloud 容器）
+            currentAudioURL = url
 
             projects.append(project)
             selectedProject = project
 
-            // 載入波形
-            await loadWaveform(for: project)
+            // 載入音訊和波形
+            await loadAudio(from: url)
 
         } catch {
             self.error = error
@@ -96,10 +138,243 @@ public class ContentViewModel: ObservableObject {
         }
     }
 
+    // MARK: - Audio Loading
+
+    /// 載入音訊檔案
+    public func loadAudio(from url: URL) async {
+        do {
+            currentAudioURL = url
+
+            // 載入播放器
+            try await audioPlayer.load(url: url)
+            isAudioLoaded = audioPlayer.isLoaded
+            duration = audioPlayer.duration
+
+            // 載入波形
+            await loadWaveform(from: url)
+
+        } catch {
+            self.error = error
+            self.showError = true
+        }
+    }
+
+    /// 從 URL 載入波形
+    public func loadWaveform(from url: URL) async {
+        isLoadingWaveform = true
+        progressLabel = "載入波形中..."
+
+        do {
+            // 先快速載入縮圖波形
+            let thumbnail = try await WaveformGenerator.generateThumbnail(from: url)
+            waveformSamples = thumbnail.peaks
+            waveformDuration = thumbnail.duration
+
+            // 背景載入詳細波形
+            let detailed = try await WaveformGenerator.generate(
+                from: url,
+                resolution: .standard,
+                useCache: true
+            ) { [weak self] progress in
+                Task { @MainActor in
+                    self?.progress = progress
+                }
+            }
+
+            waveformSamples = detailed.peaks
+            waveformDuration = detailed.duration
+            progress = 0
+            progressLabel = ""
+
+        } catch {
+            self.error = error
+            self.showError = true
+        }
+
+        isLoadingWaveform = false
+    }
+
+    // MARK: - Playback Controls
+
+    /// 播放
+    public func play() {
+        audioPlayer.play()
+        isPlaying = audioPlayer.isPlaying
+    }
+
+    /// 暫停
+    public func pause() {
+        audioPlayer.pause()
+        isPlaying = audioPlayer.isPlaying
+    }
+
+    /// 切換播放/暫停
+    public func togglePlayPause() {
+        if isPlaying {
+            pause()
+        } else {
+            play()
+        }
+    }
+
+    /// 跳轉到指定時間
+    public func seek(to time: TimeInterval) async {
+        await audioPlayer.seek(to: time)
+        currentTime = time
+    }
+
+    /// 快進
+    public func skipForward(seconds: TimeInterval = 5) async {
+        await audioPlayer.skipForward(seconds: seconds)
+        currentTime = audioPlayer.currentTime
+    }
+
+    /// 快退
+    public func skipBackward(seconds: TimeInterval = 5) async {
+        await audioPlayer.skipBackward(seconds: seconds)
+        currentTime = audioPlayer.currentTime
+    }
+
+    /// 停止播放
+    public func stop() {
+        audioPlayer.stop()
+        isPlaying = false
+    }
+
+    // MARK: - Edit Operations
+
+    /// 刪除選取的區間
+    public func deleteRegion(_ region: EditRegion) {
+        editRegions.removeAll { $0.id == region.id }
+        if selectedEditRegionID == region.id {
+            selectedEditRegionID = nil
+        }
+    }
+
+    /// 移動補上（將刪除區間後的內容向前移動填補空隙）
+    public func moveAndFillRegion(_ region: EditRegion) {
+        // 將區間標記為待處理的移除區域
+        // 實際的音訊處理會在執行 applyEdits() 時進行
+        if let index = editRegions.firstIndex(where: { $0.id == region.id }) {
+            var updatedRegion = editRegions[index]
+            updatedRegion.isSelected = true
+            editRegions[index] = updatedRegion
+        }
+    }
+
+    /// 套用所有編輯
+    public func applyEdits() async {
+        guard let project = selectedProject,
+              let audioURL = currentAudioURL,
+              !editRegions.isEmpty else { return }
+
+        isProcessing = true
+        progressLabel = "套用編輯中..."
+        progress = 0
+
+        do {
+            // 建立 Removal 物件
+            let removals = editRegions.map { region in
+                Removal(
+                    start: region.start,
+                    end: region.end,
+                    reason: .filler, // 手動編輯標記為 filler
+                    text: "[手動刪除]"
+                )
+            }
+
+            let analysis = AnalysisResult(
+                removals: removals,
+                originalDuration: duration
+            )
+
+            // 輸出路徑
+            let outputDir = FileManager.default.temporaryDirectory
+            let outputURL = outputDir.appendingPathComponent("edited_\(project.audioFileName)")
+
+            // 執行編輯
+            let editor = AudioEditor()
+            let report = try await editor.edit(
+                inputURL: audioURL,
+                outputURL: outputURL,
+                analysis: analysis
+            ) { [weak self] progress in
+                Task { @MainActor in
+                    self?.progress = progress
+                }
+            }
+
+            editReport = report
+            project.editReport = report
+            project.status = .completed
+
+            // 清除編輯區域
+            editRegions.removeAll()
+            selectedEditRegionID = nil
+
+            // 重新載入編輯後的音訊
+            await loadAudio(from: outputURL)
+
+        } catch {
+            self.error = error
+            self.showError = true
+        }
+
+        isProcessing = false
+        progress = 0
+        progressLabel = ""
+    }
+
+    // MARK: - ASR Model Management
+
+    /// 載入 ASR 模型
+    public func loadASRModel() async {
+        guard !isModelLoaded && !isLoadingModel else { return }
+
+        isLoadingModel = true
+        isProcessing = true
+        progressLabel = "下載 WhisperKit 模型中..."
+        progress = 0
+
+        do {
+            try await asrProvider.loadModel { [weak self] downloadProgress in
+                Task { @MainActor in
+                    self?.progress = downloadProgress
+                    if downloadProgress < 0.8 {
+                        self?.progressLabel = "下載模型中... \(Int(downloadProgress / 0.8 * 100))%"
+                    } else {
+                        self?.progressLabel = "載入模型中..."
+                    }
+                }
+            }
+            isModelLoaded = true
+        } catch {
+            self.error = error
+            self.showError = true
+        }
+
+        isLoadingModel = false
+        isProcessing = false
+        progressLabel = ""
+        progress = 0
+    }
+
+    /// 卸載 ASR 模型（釋放記憶體）
+    public func unloadASRModel() {
+        asrProvider.unloadModel()
+        isModelLoaded = false
+    }
+
+    /// 支援的語言列表
+    public var supportedLanguages: [String] {
+        asrProvider.supportedLanguages
+    }
+
     // MARK: - Processing
 
     public func transcribe() async {
-        guard let project = selectedProject else { return }
+        guard let project = selectedProject,
+              let audioURL = currentAudioURL else { return }
 
         isProcessing = true
         progressLabel = "轉錄中..."
@@ -114,25 +389,31 @@ public class ContentViewModel: ObservableObject {
         do {
             project.status = .transcribing
 
-            // TODO: 使用 WhisperKit 進行轉錄
-            // let provider = WhisperKitProvider()
-            // transcript = try await provider.transcribe(...)
-
-            // 模擬進度
-            for i in 1...10 {
-                try await Task.sleep(for: .milliseconds(200))
-                progress = Double(i) / 10.0
+            // 確保模型已載入
+            if !isModelLoaded {
+                try await asrProvider.loadModelWithDetails { [weak self] downloadProgress in
+                    Task { @MainActor in
+                        self?.progress = downloadProgress.fractionCompleted
+                        self?.progressLabel = downloadProgress.formattedProgress
+                    }
+                }
+                isModelLoaded = true
             }
 
-            // 模擬結果
-            transcript = TranscriptResult(
-                segments: [
-                    Segment(text: "這是一段測試文字", start: 0, end: 5),
-                    Segment(text: "嗯 就是說 這個功能很棒", start: 5, end: 10),
-                ],
-                language: "zh",
-                duration: project.duration
-            )
+            progressLabel = "轉錄中..."
+            progress = 0
+
+            // 使用 WhisperKit 進行轉錄
+            transcript = try await asrProvider.transcribe(
+                url: audioURL,
+                language: selectedLanguage,
+                includeWordTimestamps: true
+            ) { [weak self] transcribeProgress in
+                Task { @MainActor in
+                    self?.progress = transcribeProgress
+                    self?.progressLabel = "轉錄中... \(Int(transcribeProgress * 100))%"
+                }
+            }
 
             project.transcript = transcript
             project.status = .transcribed
@@ -146,7 +427,7 @@ public class ContentViewModel: ObservableObject {
 
     public func analyze() async {
         guard let project = selectedProject,
-              let transcript = transcript else { return }
+              transcript != nil else { return }
 
         isProcessing = true
         progressLabel = "分析中..."
@@ -192,7 +473,8 @@ public class ContentViewModel: ObservableObject {
 
     public func edit() async {
         guard let project = selectedProject,
-              let analysis = analysisResult else { return }
+              let analysis = analysisResult,
+              let audioURL = currentAudioURL else { return }
 
         isProcessing = true
         progressLabel = "剪輯中..."
@@ -207,34 +489,27 @@ public class ContentViewModel: ObservableObject {
         do {
             project.status = .editing
 
-            // TODO: 使用 AudioEditor 進行剪輯
-            // let editor = AudioEditor()
-            // editReport = try await editor.edit(...)
+            // 輸出路徑
+            let outputDir = FileManager.default.temporaryDirectory
+            let outputURL = outputDir.appendingPathComponent("edited_\(project.audioFileName)")
 
-            // 模擬進度
-            for i in 1...10 {
-                try await Task.sleep(for: .milliseconds(150))
-                progress = Double(i) / 10.0
-            }
-
-            // 模擬結果
-            editReport = EditReport(
-                inputURL: URL(fileURLWithPath: "/input.wav"),
-                outputURL: URL(fileURLWithPath: "/output.wav"),
-                originalDuration: project.duration,
-                editedDuration: project.duration - analysis.removedDuration,
-                edits: analysis.removals.map {
-                    AppliedEdit(
-                        originalStart: $0.start,
-                        originalEnd: $0.end,
-                        reason: $0.reason,
-                        text: $0.text
-                    )
+            // 使用 AudioEditor 進行剪輯
+            let editor = AudioEditor()
+            editReport = try await editor.edit(
+                inputURL: audioURL,
+                outputURL: outputURL,
+                analysis: analysis
+            ) { [weak self] progress in
+                Task { @MainActor in
+                    self?.progress = progress
                 }
-            )
+            }
 
             project.editReport = editReport
             project.status = .completed
+
+            // 重新載入編輯後的音訊
+            await loadAudio(from: outputURL)
 
         } catch {
             project.status = .failed
@@ -243,15 +518,13 @@ public class ContentViewModel: ObservableObject {
         }
     }
 
-    // MARK: - Waveform
+    // MARK: - Cleanup
 
-    private func loadWaveform(for project: Project) async {
-        // TODO: 從音訊檔案載入波形資料
-        // 這裡用模擬資料
-        waveformSamples = (0..<1000).map { i in
-            let t = Float(i) / 1000
-            return sin(t * 50) * (0.3 + 0.7 * sin(t * 5)) * Float.random(in: 0.8...1.0)
-        }
+    public func cleanup() {
+        audioPlayer.unload()
+        isAudioLoaded = false
+        currentAudioURL = nil
+        unloadASRModel()
     }
 }
 
