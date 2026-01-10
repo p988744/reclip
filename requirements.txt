@@ -1,0 +1,25 @@
+# Audio processing
+pydub>=0.25.1
+numpy>=1.24.0
+
+# ASR - WhisperX
+whisperx>=3.1.1
+torch>=2.0.0
+torchaudio>=2.0.0
+
+# Speaker diarization (requires HF token)
+pyannote.audio>=3.1.0
+
+# LLM
+anthropic>=0.39.0
+
+# CLI
+click>=8.1.0
+rich>=13.0.0
+
+# Environment
+python-dotenv>=1.0.0
+
+# Development
+pytest>=7.4.0
+pytest-cov>=4.1.0

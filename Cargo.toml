@@ -1,0 +1,51 @@
+[workspace]
+resolver = "2"
+members = [
+    "src-tauri",
+    "crates/reclip-core",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+authors = ["reclip"]
+
+[workspace.dependencies]
+# Async runtime
+tokio = { version = "1.35", features = ["full"] }
+
+# Audio processing
+hound = "3.5"
+symphonia = { version = "0.5", features = ["all"] }
+rubato = "0.14"
+
+# Serialization
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+
+# Error handling
+thiserror = "1.0"
+anyhow = "1.0"
+
+# Logging
+tracing = "0.1"
+tracing-subscriber = "0.3"
+
+# Python bindings
+pyo3 = { version = "0.20", features = ["extension-module"] }
+
+# Tauri
+tauri = { version = "2.1", features = [] }
+tauri-build = "2.0"
+
+# HTTP client (for Claude API)
+reqwest = { version = "0.11", features = ["json"] }
+
+# Time
+chrono = { version = "0.4", features = ["serde"] }
+
+[profile.release]
+lto = true
+codegen-units = 1
+strip = true

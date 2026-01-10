@@ -1,0 +1,36 @@
+[package]
+name = "reclip-core"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Core library for reclip podcast auto-editor"
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+# Audio processing
+hound = { workspace = true }
+symphonia = { workspace = true }
+rubato = { workspace = true }
+
+# Serialization
+serde = { workspace = true }
+serde_json = { workspace = true }
+
+# Error handling
+thiserror = { workspace = true }
+anyhow = { workspace = true }
+
+# Logging
+tracing = { workspace = true }
+
+# Time
+chrono = { workspace = true }
+
+# Python bindings (optional)
+pyo3 = { workspace = true, optional = true }
+
+[features]
+default = []
+python = ["pyo3"]

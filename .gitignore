@@ -1,0 +1,47 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+venv/
+.venv/
+env/
+.env
+*.egg-info/
+dist/
+build/
+.eggs/
+
+# Rust
+/target/
+Cargo.lock
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Project specific
+*.wav
+*.mp3
+*.flac
+*.m4a
+*.ogg
+!tests/fixtures/*
+
+# Tauri
+src-tauri/target/
+
+# Logs
+*.log
+
+# Temp
+/tmp/
+*.tmp
