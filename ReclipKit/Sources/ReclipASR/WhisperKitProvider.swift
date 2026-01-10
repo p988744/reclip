@@ -66,10 +66,10 @@ public final class WhisperKitProvider: ASRProvider, @unchecked Sendable {
             audioPath: url.path,
             decodeOptions: options
         ) { progressInfo in
-            // 回報進度
-            if let p = progressInfo.timings?.pipelineStart {
-                progress(min(1.0, p))
-            }
+            // 回報進度（使用 fractionComplete 如果可用）
+            let fractionComplete = progressInfo.timings.decodingLoop / max(1.0, progressInfo.timings.fullPipeline)
+            progress(min(1.0, fractionComplete))
+            return nil // 繼續處理
         }
 
         // 轉換結果
@@ -85,7 +85,7 @@ public final class WhisperKitProvider: ASRProvider, @unchecked Sendable {
 
         for result in results {
             for segment in result.segments {
-                let words = segment.words.map { word in
+                let words: [WordSegment] = (segment.words ?? []).map { word in
                     WordSegment(
                         word: word.word,
                         start: TimeInterval(word.start),

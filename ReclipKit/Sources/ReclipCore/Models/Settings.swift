@@ -74,9 +74,9 @@ public class AppSettings: ObservableObject {
 
     // MARK: - Sync Settings
 
-    /// 是否啟用 iCloud 同步
+    /// 是否啟用 iCloud 同步（需要 Apple Developer Program）
     @AppStorage("sync.iCloudEnabled")
-    public var iCloudEnabled: Bool = true
+    public var iCloudEnabled: Bool = false
 
     /// 是否同步音訊檔案
     @AppStorage("sync.syncAudioFiles")

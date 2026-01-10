@@ -152,7 +152,7 @@ public struct WaveformView: View {
     private func colorForReason(_ reason: RemovalReason) -> Color {
         switch reason {
         case .filler: return .orange
-        case .repeat: return .purple
+        case .repair: return .purple
         case .restart: return .blue
         case .mouthNoise: return .pink
         case .longPause: return .gray
@@ -166,7 +166,7 @@ extension RemovalReason {
     public var displayName: String {
         switch self {
         case .filler: return "語氣詞"
-        case .repeat: return "重複"
+        case .repair: return "修正"
         case .restart: return "重說"
         case .mouthNoise: return "雜音"
         case .longPause: return "長停頓"
@@ -185,11 +185,11 @@ extension RemovalReason {
 
     let removals = [
         Removal(start: 5, end: 6, reason: .filler, text: "嗯"),
-        Removal(start: 15, end: 17, reason: .repeat, text: "就是說 就是說"),
+        Removal(start: 15, end: 17, reason: .repair, text: "就是說 就是說"),
         Removal(start: 25, end: 26.5, reason: .longPause, text: ""),
     ]
 
-    return VStack {
+    VStack {
         WaveformView(
             samples: samples,
             removals: removals,

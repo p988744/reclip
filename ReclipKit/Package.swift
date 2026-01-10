@@ -1,4 +1,4 @@
-// swift-tools-version: 6.0
+// swift-tools-version: 6.2
 // The swift-tools-version declares the minimum version of Swift required to build this package.
 
 import PackageDescription
@@ -28,14 +28,14 @@ let package = Package(
         ),
     ],
     dependencies: [
-        // ASR - WhisperKit
-        .package(url: "https://github.com/argmaxinc/WhisperKit.git", from: "0.9.0"),
+        // ASR - WhisperKit (v0.15.0 - Nov 2025)
+        .package(url: "https://github.com/argmaxinc/WhisperKit.git", from: "0.15.0"),
 
-        // LLM - Ollama (macOS only)
-        .package(url: "https://github.com/mattt/ollama-swift.git", from: "0.4.0"),
+        // LLM - Ollama (v1.8.0 - Jun 2025, macOS only)
+        .package(url: "https://github.com/mattt/ollama-swift.git", from: "1.8.0"),
 
-        // LLM - Claude API
-        .package(url: "https://github.com/jamesrochabrun/SwiftAnthropic.git", from: "1.9.0"),
+        // LLM - Claude API (v2.2.0 - Oct 2025, Skills API support)
+        .package(url: "https://github.com/jamesrochabrun/SwiftAnthropic.git", from: "2.2.0"),
     ],
     targets: [
         // Core library - shared logic

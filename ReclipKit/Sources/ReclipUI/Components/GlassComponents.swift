@@ -138,9 +138,9 @@ public struct GlassButtonStyle: ButtonStyle {
 }
 
 extension ButtonStyle where Self == GlassButtonStyle {
-    public static var glass: GlassButtonStyle { GlassButtonStyle() }
+    public static var reclipGlass: GlassButtonStyle { GlassButtonStyle() }
 
-    public static func glass(tint: Color) -> GlassButtonStyle {
+    public static func reclipGlass(tint: Color) -> GlassButtonStyle {
         GlassButtonStyle(tint: tint)
     }
 }
@@ -316,7 +316,7 @@ public struct GlassContainer<Content: View>: View {
         }
 
         Button("開始處理") { }
-            .buttonStyle(.glass(tint: .blue))
+            .buttonStyle(.reclipGlass(tint: .blue))
 
         GlassProgress(value: 0.65, label: "處理進度")
             .padding(.horizontal)

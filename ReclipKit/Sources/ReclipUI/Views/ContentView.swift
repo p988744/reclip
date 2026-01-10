@@ -60,7 +60,7 @@ public struct ContentView: View {
             Button("匯入音訊", systemImage: "plus.circle") {
                 viewModel.showFileImporter = true
             }
-            .buttonStyle(.glass(tint: .accentColor))
+            .buttonStyle(.reclipGlass(tint: .accentColor))
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background {
@@ -124,7 +124,7 @@ struct ProjectRow: View {
     var body: some View {
         HStack(spacing: 12) {
             Image(systemName: project.status.icon)
-                .foregroundStyle(project.status.color)
+                .foregroundStyle(statusColor(for: project.status.colorName))
 
             VStack(alignment: .leading, spacing: 2) {
                 Text(project.name)
@@ -136,6 +136,17 @@ struct ProjectRow: View {
             }
         }
         .padding(.vertical, 4)
+    }
+
+    private func statusColor(for colorName: String) -> Color {
+        switch colorName {
+        case "blue": return .blue
+        case "orange": return .orange
+        case "green": return .green
+        case "red": return .red
+        case "secondary": return .secondary
+        default: return .primary
+        }
     }
 }
 
@@ -216,19 +227,19 @@ struct ProjectDetailView: View {
             Button("轉錄", systemImage: "waveform") {
                 Task { await viewModel.transcribe() }
             }
-            .buttonStyle(.glass)
+            .buttonStyle(.reclipGlass)
             .disabled(viewModel.isProcessing)
 
             Button("分析", systemImage: "sparkles") {
                 Task { await viewModel.analyze() }
             }
-            .buttonStyle(.glass)
+            .buttonStyle(.reclipGlass)
             .disabled(viewModel.transcript == nil || viewModel.isProcessing)
 
             Button("剪輯", systemImage: "scissors") {
                 Task { await viewModel.edit() }
             }
-            .buttonStyle(.glass(tint: .green))
+            .buttonStyle(.reclipGlass(tint: .green))
             .disabled(viewModel.analysisResult == nil || viewModel.isProcessing)
 
             Spacer()
@@ -319,7 +330,7 @@ struct ProjectDetailView: View {
     private func colorForReason(_ reason: RemovalReason) -> Color {
         switch reason {
         case .filler: return .orange
-        case .repeat: return .purple
+        case .repair: return .purple
         case .restart: return .blue
         case .mouthNoise: return .pink
         case .longPause: return .gray

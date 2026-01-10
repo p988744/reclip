@@ -7,14 +7,17 @@ public final class ClaudeProvider: LLMProvider, @unchecked Sendable {
     public let name = "Claude"
     public let isLocal = false
 
-    private let client: SwiftAnthropic.AnthropicServiceable
+    private let service: AnthropicService
     private let model: String
 
     public init(
         apiKey: String,
         model: String = "claude-sonnet-4-20250514"
     ) {
-        self.client = Anthropic(apiKey: apiKey)
+        self.service = AnthropicServiceFactory.service(
+            apiKey: apiKey,
+            betaHeaders: nil
+        )
         self.model = model
     }
 
@@ -71,23 +74,30 @@ public final class ClaudeProvider: LLMProvider, @unchecked Sendable {
     ) async throws -> [Removal] {
         let prompt = AnalysisPrompt.generate(for: segments)
 
-        let message = MessageParameter(
+        let message = MessageParameter.Message(
             role: .user,
             content: .text(prompt)
         )
 
-        let response = try await client.createMessage(
-            CreateMessageParameters(
-                model: .custom(model),
-                messages: [message],
-                maxTokens: 4096
-            )
+        let parameter = MessageParameter(
+            model: .other(model),
+            messages: [message],
+            maxTokens: 4096
         )
 
+        let response = try await service.createMessage(parameter)
+
         // 解析回應
-        guard let textContent = response.content.first,
-              case .text(let text) = textContent else {
+        guard let textContent = response.content.first else {
             throw LLMError.invalidResponse("無法取得回應內容")
+        }
+
+        let text: String
+        switch textContent {
+        case .text(let content, _):
+            text = content
+        default:
+            throw LLMError.invalidResponse("回應內容類型不支援")
         }
 
         return try parseResponse(text)

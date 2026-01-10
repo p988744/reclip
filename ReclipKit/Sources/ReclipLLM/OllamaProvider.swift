@@ -4,25 +4,26 @@ import ReclipCore
 import Ollama
 
 /// Ollama 本地 LLM 提供者（僅 macOS）
+@MainActor
 public final class OllamaProvider: LLMProvider, @unchecked Sendable {
     public let name = "Ollama"
     public let isLocal = true
 
-    private let client: OllamaClient
-    private let model: String
+    private let client: Ollama.Client
+    private let model: Ollama.Model.ID
 
     public init(
         host: String = "http://localhost:11434",
         model: String = "llama3.2"
     ) {
-        self.client = OllamaClient(host: URL(string: host)!)
-        self.model = model
+        self.client = Ollama.Client(host: URL(string: host)!)
+        self.model = Ollama.Model.ID(rawValue: model)!
     }
 
     /// 檢查 Ollama 是否正在運行
     public func isAvailable() async -> Bool {
         do {
-            _ = try await client.models()
+            _ = try await client.listModels()
             return true
         } catch {
             return false
@@ -31,7 +32,7 @@ public final class OllamaProvider: LLMProvider, @unchecked Sendable {
 
     /// 列出可用的模型
     public func listModels() async throws -> [String] {
-        let response = try await client.models()
+        let response = try await client.listModels()
         return response.models.map { $0.name }
     }
 
@@ -97,8 +98,8 @@ public final class OllamaProvider: LLMProvider, @unchecked Sendable {
             model: model,
             prompt: prompt,
             options: [
-                "temperature": 0.1,
-                "num_predict": 4096
+                "temperature": .double(0.1),
+                "num_predict": .double(4096)
             ]
         )
 

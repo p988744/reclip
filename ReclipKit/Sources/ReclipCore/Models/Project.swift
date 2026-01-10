@@ -132,13 +132,13 @@ public enum ProjectStatus: String, Codable, Sendable {
         }
     }
 
-    public var color: some ShapeStyle {
+    public var colorName: String {
         switch self {
-        case .imported: return .secondary
-        case .transcribing, .analyzing, .editing: return .blue
-        case .transcribed, .analyzed: return .orange
-        case .completed: return .green
-        case .failed: return .red
+        case .imported: return "secondary"
+        case .transcribing, .analyzing, .editing: return "blue"
+        case .transcribed, .analyzed: return "orange"
+        case .completed: return "green"
+        case .failed: return "red"
         }
     }
 }
@@ -147,13 +147,18 @@ public enum ProjectStatus: String, Codable, Sendable {
 
 extension Project {
     /// SwiftData 模型容器配置
-    public static var modelContainer: ModelContainer {
+    /// - Parameter enableiCloud: 是否啟用 iCloud 同步
+    public static func createModelContainer(enableiCloud: Bool = false) -> ModelContainer {
         let schema = Schema([Project.self])
+
+        let cloudKitConfig: ModelConfiguration.CloudKitDatabase = enableiCloud
+            ? .private("iCloud.com.reclip.app")
+            : .none
 
         let modelConfiguration = ModelConfiguration(
             schema: schema,
             isStoredInMemoryOnly: false,
-            cloudKitDatabase: .private("iCloud.com.reclip.app")
+            cloudKitDatabase: cloudKitConfig
         )
 
         do {
@@ -161,5 +166,11 @@ extension Project {
         } catch {
             fatalError("無法建立 ModelContainer: \(error)")
         }
+    }
+
+    /// 預設模型容器（從 UserDefaults 讀取 iCloud 設定）
+    public static var modelContainer: ModelContainer {
+        let iCloudEnabled = UserDefaults.standard.bool(forKey: "sync.iCloudEnabled")
+        return createModelContainer(enableiCloud: iCloudEnabled)
     }
 }

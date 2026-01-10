@@ -97,7 +97,7 @@ public struct AIConsentView: View {
                     Text("同意並繼續")
                         .frame(maxWidth: .infinity)
                 }
-                .buttonStyle(.glass(tint: .accentColor))
+                .buttonStyle(.reclipGlass(tint: .accentColor))
                 .controlSize(.large)
 
                 Button("稍後設定") {
@@ -182,7 +182,7 @@ struct AIOptionCard: View {
 
                 // 選中指示器
                 Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
-                    .foregroundStyle(isSelected ? .accentColor : .secondary)
+                    .foregroundStyle(isSelected ? Color.accentColor : .secondary)
             }
             .padding()
             .background {
@@ -204,6 +204,7 @@ struct AIOptionCard: View {
 // MARK: - Consent Manager
 
 /// AI 同意管理器
+@MainActor
 public class AIConsentManager: ObservableObject {
     public static let shared = AIConsentManager()
 
