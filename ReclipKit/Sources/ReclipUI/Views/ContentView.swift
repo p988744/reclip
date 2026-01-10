@@ -449,26 +449,119 @@ struct ProjectDetailView: View {
 
 struct TranscriptTab: View {
     @ObservedObject var viewModel: ContentViewModel
+    @State private var viewMode: TranscriptViewMode = .timeline
+
+    enum TranscriptViewMode: String, CaseIterable {
+        case timeline = "時間軸"
+        case list = "列表"
+
+        var icon: String {
+            switch self {
+            case .timeline: return "chart.bar.xaxis"
+            case .list: return "list.bullet"
+            }
+        }
+    }
 
     var body: some View {
-        VStack(spacing: 16) {
+        VStack(spacing: 0) {
             if let transcript = viewModel.transcript {
-                // 逐字稿顯示
-                TranscriptView(
-                    transcript: transcript,
-                    currentTime: viewModel.currentTime,
-                    onSeek: { time in
-                        Task {
-                            await viewModel.seek(to: time)
+                // 視圖模式切換
+                HStack {
+                    Picker("檢視模式", selection: $viewMode) {
+                        ForEach(TranscriptViewMode.allCases, id: \.self) { mode in
+                            Label(mode.rawValue, systemImage: mode.icon)
+                                .tag(mode)
                         }
                     }
-                )
+                    .pickerStyle(.segmented)
+                    .frame(width: 200)
+
+                    Spacer()
+
+                    // 說話者統計
+                    if viewMode == .timeline {
+                        speakerStats(transcript)
+                    }
+                }
+                .padding()
+
+                Divider()
+
+                // 內容區
+                switch viewMode {
+                case .timeline:
+                    SpeakerTimelineView(
+                        transcript: transcript,
+                        currentTime: viewModel.currentTime,
+                        duration: viewModel.duration,
+                        onSeek: { time in
+                            Task {
+                                await viewModel.seek(to: time)
+                            }
+                        }
+                    )
+                    .padding()
+
+                case .list:
+                    TranscriptView(
+                        transcript: transcript,
+                        currentTime: viewModel.currentTime,
+                        onSeek: { time in
+                            Task {
+                                await viewModel.seek(to: time)
+                            }
+                        }
+                    )
+                    .padding()
+                }
             } else {
                 // 尚無逐字稿
                 transcriptionEmptyState
             }
         }
-        .padding()
+    }
+
+    @ViewBuilder
+    private func speakerStats(_ transcript: TranscriptResult) -> some View {
+        let speakers = getSpeakerStats(transcript)
+
+        HStack(spacing: 16) {
+            ForEach(Array(speakers.enumerated()), id: \.element.name) { index, speaker in
+                HStack(spacing: 6) {
+                    Circle()
+                        .fill(speakerColor(index))
+                        .frame(width: 8, height: 8)
+
+                    Text(speaker.name)
+                        .font(.caption)
+
+                    Text(formatDuration(speaker.totalDuration))
+                        .font(.caption.monospacedDigit())
+                        .foregroundStyle(.secondary)
+                }
+            }
+        }
+    }
+
+    private func getSpeakerStats(_ transcript: TranscriptResult) -> [(name: String, totalDuration: TimeInterval)] {
+        var stats: [String: TimeInterval] = [:]
+        for segment in transcript.segments {
+            let speaker = segment.speaker ?? "說話者"
+            stats[speaker, default: 0] += segment.duration
+        }
+        return stats.map { ($0.key, $0.value) }.sorted { $0.totalDuration > $1.totalDuration }
+    }
+
+    private func speakerColor(_ index: Int) -> Color {
+        let colors: [Color] = [.blue, .green, .orange, .purple, .pink, .cyan, .mint, .indigo]
+        return colors[index % colors.count]
+    }
+
+    private func formatDuration(_ seconds: TimeInterval) -> String {
+        let mins = Int(seconds) / 60
+        let secs = Int(seconds) % 60
+        return String(format: "%d:%02d", mins, secs)
     }
 
     private var transcriptionEmptyState: some View {
