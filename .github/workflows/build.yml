@@ -1,0 +1,163 @@
+name: Build & Release
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  pull_request:
+    branches: [main]
+
+env:
+  XCODE_VERSION: '16.0'
+  MACOS_VERSION: 'macos-15'
+
+jobs:
+  # 建構與測試
+  build:
+    name: Build & Test
+    runs-on: macos-15
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Select Xcode
+        run: sudo xcode-select -s /Applications/Xcode_${{ env.XCODE_VERSION }}.app
+
+      - name: Install Dependencies
+        run: |
+          brew install xcodegen swiftformat swiftlint
+
+      - name: Generate Xcode Project
+        run: xcodegen generate
+
+      - name: Resolve Packages
+        run: xcodebuild -resolvePackageDependencies -scheme Reclip
+
+      - name: Build
+        run: |
+          xcodebuild build \
+            -scheme Reclip \
+            -configuration Debug \
+            -destination "platform=macOS" \
+            CODE_SIGN_IDENTITY="-" \
+            CODE_SIGNING_REQUIRED=NO
+
+      - name: Run Tests
+        run: |
+          xcodebuild test \
+            -scheme Reclip \
+            -configuration Debug \
+            -destination "platform=macOS" \
+            CODE_SIGN_IDENTITY="-" \
+            CODE_SIGNING_REQUIRED=NO
+
+      - name: Lint
+        run: swiftlint --strict || true
+
+  # 發布 Release（僅在 tag 時執行）
+  release:
+    name: Create Release
+    needs: build
+    runs-on: macos-15
+    if: startsWith(github.ref, 'refs/tags/v')
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Select Xcode
+        run: sudo xcode-select -s /Applications/Xcode_${{ env.XCODE_VERSION }}.app
+
+      - name: Install Dependencies
+        run: brew install xcodegen create-dmg
+
+      - name: Generate Xcode Project
+        run: xcodegen generate
+
+      - name: Import Certificates
+        env:
+          CERTIFICATE_P12: ${{ secrets.CERTIFICATE_P12 }}
+          CERTIFICATE_PASSWORD: ${{ secrets.CERTIFICATE_PASSWORD }}
+        run: |
+          # 建立臨時 Keychain
+          KEYCHAIN_PATH=$RUNNER_TEMP/app-signing.keychain-db
+          KEYCHAIN_PASSWORD=$(openssl rand -base64 32)
+
+          security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security set-keychain-settings -lut 21600 "$KEYCHAIN_PATH"
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+
+          # 匯入憑證
+          echo "$CERTIFICATE_P12" | base64 --decode > $RUNNER_TEMP/certificate.p12
+          security import $RUNNER_TEMP/certificate.p12 \
+            -P "$CERTIFICATE_PASSWORD" \
+            -A -t cert -f pkcs12 \
+            -k "$KEYCHAIN_PATH"
+
+          security list-keychain -d user -s "$KEYCHAIN_PATH"
+
+      - name: Build Release
+        env:
+          TEAM_ID: ${{ secrets.TEAM_ID }}
+        run: |
+          xcodebuild archive \
+            -scheme Reclip \
+            -configuration Release \
+            -destination "generic/platform=macOS" \
+            -archivePath build/Reclip.xcarchive \
+            DEVELOPMENT_TEAM="$TEAM_ID" \
+            CODE_SIGN_STYLE=Manual \
+            CODE_SIGN_IDENTITY="Developer ID Application"
+
+      - name: Export App
+        env:
+          TEAM_ID: ${{ secrets.TEAM_ID }}
+        run: |
+          # 替換 Team ID
+          sed "s/\${TEAM_ID}/$TEAM_ID/g" \
+            scripts/ExportOptions-DeveloperID.plist > build/ExportOptions.plist
+
+          xcodebuild -exportArchive \
+            -archivePath build/Reclip.xcarchive \
+            -exportPath build/export \
+            -exportOptionsPlist build/ExportOptions.plist
+
+      - name: Notarize App
+        env:
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+          TEAM_ID: ${{ secrets.TEAM_ID }}
+        run: |
+          # 建立 zip
+          ditto -c -k --keepParent build/export/Reclip.app build/Reclip.zip
+
+          # 提交公證
+          xcrun notarytool submit build/Reclip.zip \
+            --apple-id "$APPLE_ID" \
+            --password "$APPLE_PASSWORD" \
+            --team-id "$TEAM_ID" \
+            --wait
+
+          # 裝訂票證
+          xcrun stapler staple build/export/Reclip.app
+
+      - name: Create DMG
+        run: |
+          create-dmg \
+            --volname "Reclip" \
+            --window-pos 200 120 \
+            --window-size 660 400 \
+            --icon-size 100 \
+            --icon "Reclip.app" 160 185 \
+            --app-drop-link 500 185 \
+            "build/Reclip-${{ github.ref_name }}.dmg" \
+            "build/export/Reclip.app"
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v1
+        with:
+          files: build/Reclip-${{ github.ref_name }}.dmg
+          draft: false
+          prerelease: ${{ contains(github.ref_name, 'beta') || contains(github.ref_name, 'alpha') }}
+          generate_release_notes: true

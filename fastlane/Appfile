@@ -1,0 +1,33 @@
+# Reclip Fastlane App 配置
+# https://docs.fastlane.tools/advanced/Appfile/
+
+# App Bundle Identifier
+app_identifier("com.reclip.app")
+
+# Apple Developer Portal 用戶名
+apple_id(ENV["APPLE_ID"] || "your@email.com")
+
+# Team ID
+team_id(ENV["TEAM_ID"] || "YOUR_TEAM_ID")
+
+# App Store Connect Team ID（如果不同）
+# itc_team_id("YOUR_ITC_TEAM_ID")
+
+# ═══════════════════════════════════════════════════════════
+# 環境配置
+# ═══════════════════════════════════════════════════════════
+
+# 開發環境
+for_platform :mac do
+  for_lane :test do
+    app_identifier("com.reclip.app.dev")
+  end
+
+  for_lane :beta do
+    app_identifier("com.reclip.app")
+  end
+
+  for_lane :release_appstore do
+    app_identifier("com.reclip.app")
+  end
+end

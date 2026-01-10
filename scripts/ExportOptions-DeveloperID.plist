@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <!-- Developer ID 發行用（DMG、網站下載） -->
+    <key>method</key>
+    <string>developer-id</string>
+
+    <key>teamID</key>
+    <string>${TEAM_ID}</string>
+
+    <key>signingStyle</key>
+    <string>manual</string>
+
+    <key>signingCertificate</key>
+    <string>Developer ID Application</string>
+
+    <key>destination</key>
+    <string>export</string>
+
+    <!-- Hardened Runtime -->
+    <key>hardened-runtime</key>
+    <true/>
+
+    <!-- 時間戳（公證必要） -->
+    <key>timestamp</key>
+    <true/>
+</dict>
+</plist>
