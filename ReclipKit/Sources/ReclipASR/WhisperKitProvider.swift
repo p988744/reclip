@@ -1,4 +1,5 @@
 import Foundation
+import AVFoundation
 import ReclipCore
 import WhisperKit
 
@@ -15,6 +16,12 @@ public final class WhisperKitProvider: ASRProvider, @unchecked Sendable {
     private var whisperKit: WhisperKit?
     private let modelName: String
     private let computeOptions: ModelComputeOptions
+
+    /// 大檔案分段處理的閾值（500MB）
+    private let largeFileThreshold: UInt64 = 500 * 1024 * 1024
+
+    /// 每段處理的最大長度（秒）- 用於大檔案
+    private let chunkDuration: TimeInterval = 600 // 10 分鐘
 
     public init(
         modelName: String = "large-v3",
@@ -43,7 +50,7 @@ public final class WhisperKitProvider: ASRProvider, @unchecked Sendable {
         includeWordTimestamps: Bool,
         progress: @escaping @Sendable (Double) -> Void
     ) async throws -> TranscriptResult {
-        guard let whisperKit else {
+        guard whisperKit != nil else {
             throw ASRError.modelNotLoaded
         }
 
@@ -55,25 +62,122 @@ public final class WhisperKitProvider: ASRProvider, @unchecked Sendable {
             throw ASRError.fileNotFound(url)
         }
 
-        // 配置轉錄選項
+        // 檢查檔案大小
+        let fileSize = try FileManager.default.attributesOfItem(atPath: url.path)[.size] as? UInt64 ?? 0
+
+        if fileSize > largeFileThreshold {
+            // 大檔案：使用分段處理
+            return try await transcribeLargeFile(
+                url: url,
+                language: language,
+                includeWordTimestamps: includeWordTimestamps,
+                progress: progress
+            )
+        } else {
+            // 一般檔案：直接處理
+            return try await transcribeDirectly(
+                url: url,
+                language: language,
+                includeWordTimestamps: includeWordTimestamps,
+                progress: progress
+            )
+        }
+    }
+
+    /// 直接轉錄（適用於一般大小檔案）
+    private func transcribeDirectly(
+        url: URL,
+        language: String,
+        includeWordTimestamps: Bool,
+        progress: @escaping @Sendable (Double) -> Void
+    ) async throws -> TranscriptResult {
+        guard let whisperKit else {
+            throw ASRError.modelNotLoaded
+        }
+
         let options = DecodingOptions(
             language: language,
             wordTimestamps: includeWordTimestamps
         )
 
-        // 執行轉錄
         let results = try await whisperKit.transcribe(
             audioPath: url.path,
             decodeOptions: options
         ) { progressInfo in
-            // 回報進度（使用 fractionComplete 如果可用）
             let fractionComplete = progressInfo.timings.decodingLoop / max(1.0, progressInfo.timings.fullPipeline)
             progress(min(1.0, fractionComplete))
-            return nil // 繼續處理
+            return nil
         }
 
-        // 轉換結果
         return convertResults(results, language: language)
+    }
+
+    /// 分段轉錄（適用於大型檔案 >500MB）
+    private func transcribeLargeFile(
+        url: URL,
+        language: String,
+        includeWordTimestamps: Bool,
+        progress: @escaping @Sendable (Double) -> Void
+    ) async throws -> TranscriptResult {
+        guard let whisperKit else {
+            throw ASRError.modelNotLoaded
+        }
+
+        // 取得音訊長度
+        let asset = AVURLAsset(url: url)
+        let duration = try await asset.load(.duration).seconds
+
+        // 計算分段數量
+        let numberOfChunks = Int(ceil(duration / chunkDuration))
+
+        var allSegments: [Segment] = []
+        var processedChunks = 0
+
+        // 分段處理
+        for chunkIndex in 0..<numberOfChunks {
+            let startTime = Double(chunkIndex) * chunkDuration
+            let endTime = min(startTime + chunkDuration, duration)
+
+            let options = DecodingOptions(
+                language: language,
+                wordTimestamps: includeWordTimestamps,
+                clipTimestamps: [Float(startTime)]  // 指定開始時間
+            )
+
+            // 轉錄這一段
+            let results = try await whisperKit.transcribe(
+                audioPath: url.path,
+                decodeOptions: options
+            ) { progressInfo in
+                // 計算整體進度
+                let chunkProgress = progressInfo.timings.decodingLoop / max(1.0, progressInfo.timings.fullPipeline)
+                let overallProgress = (Double(processedChunks) + chunkProgress) / Double(numberOfChunks)
+                progress(min(1.0, overallProgress))
+                return nil
+            }
+
+            // 轉換並調整時間戳記
+            let chunkResult = convertResults(results, language: language)
+
+            // 過濾超出範圍的 segments（clipTimestamps 可能有重疊）
+            let filteredSegments = chunkResult.segments.filter { segment in
+                segment.start >= startTime && segment.start < endTime
+            }
+
+            allSegments.append(contentsOf: filteredSegments)
+
+            processedChunks += 1
+            progress(Double(processedChunks) / Double(numberOfChunks))
+        }
+
+        // 按時間排序並移除重複
+        let sortedSegments = allSegments.sorted { $0.start < $1.start }
+
+        return TranscriptResult(
+            segments: sortedSegments,
+            language: language,
+            duration: duration
+        )
     }
 
     private func convertResults(
