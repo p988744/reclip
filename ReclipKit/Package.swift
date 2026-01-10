@@ -1,4 +1,4 @@
-// swift-tools-version: 5.9
+// swift-tools-version: 6.0
 // The swift-tools-version declares the minimum version of Swift required to build this package.
 
 import PackageDescription
@@ -6,8 +6,8 @@ import PackageDescription
 let package = Package(
     name: "ReclipKit",
     platforms: [
-        .iOS(.v16),
-        .macOS(.v14)
+        .iOS(.v26),
+        .macOS(.v26)
     ],
     products: [
         .library(
@@ -21,6 +21,10 @@ let package = Package(
         .library(
             name: "ReclipLLM",
             targets: ["ReclipLLM"]
+        ),
+        .library(
+            name: "ReclipUI",
+            targets: ["ReclipUI"]
         ),
     ],
     dependencies: [
@@ -57,6 +61,12 @@ let package = Package(
                 .product(name: "Ollama", package: "ollama-swift"),
                 .product(name: "SwiftAnthropic", package: "SwiftAnthropic"),
             ]
+        ),
+
+        // UI components (SwiftUI + Liquid Glass)
+        .target(
+            name: "ReclipUI",
+            dependencies: ["ReclipCore"]
         ),
 
         // Tests
