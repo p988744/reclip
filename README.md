@@ -1,129 +1,198 @@
-# Reclip - Podcast 自動剪輯工具
+# Reclip
 
-自動剪輯 Podcast，利用 LLM 分析逐字稿，移除 filler words、重複內容、唇齒瑕疵，輸出順剪後的乾淨音訊。
+Podcast 自動剪輯工具 - 使用 AI 自動移除語氣詞、重複、口誤和長停頓。
 
-## 功能特色
+## 功能
 
-- **智慧分析**: 使用 Claude API 分析逐字稿，識別需要移除的內容
-- **精確時間戳**: 使用 WhisperX 取得單詞級別的時間戳
-- **說話者分離**: 自動識別不同說話者
-- **零交叉點對齊**: 避免剪輯點產生爆音
-- **Crossfade**: 平滑的音訊過渡
-- **多種匯出格式**: JSON 報告、EDL、Audacity 標記
+- **語音辨識 (ASR)**: 使用 WhisperKit 進行本地語音轉文字
+- **AI 分析**: 使用 Claude API 或 Ollama 分析逐字稿，識別需移除的內容
+- **自動剪輯**: 基於 AVFoundation，支援 Crossfade 和 Zero-crossing
+- **iCloud 同步**: 專案和設定自動同步到所有裝置
+- **Liquid Glass UI**: macOS 26 原生設計
 
 ## 系統需求
 
-- Python 3.10+
-- CUDA 12.x (GPU 加速)
-- FFmpeg
-- 16GB+ VRAM GPU (建議 RTX 5060 Ti 16GB+)
-- Rust 1.75+ (桌面應用)
-- Node.js 18+ (前端)
+- macOS 26.0+
+- Xcode 16.0+
+- Swift 6.0+
 
-## 安裝
+## 快速開始
 
-### 1. 安裝 Python 依賴
+### 1. 安裝開發工具
 
 ```bash
-# 建立虛擬環境
-python -m venv venv
-source venv/bin/activate  # Linux/Mac
-# or: venv\Scripts\activate  # Windows
-
-# 安裝依賴
-pip install -r requirements.txt
+# 安裝必要工具
+brew install xcodegen swiftformat swiftlint create-dmg
 ```
 
-### 2. 設定環境變數
+### 2. 生成 Xcode 專案
 
 ```bash
-cp .env.example .env
-# 編輯 .env 填入 API keys
+# 使用 Makefile
+make setup
+
+# 或直接使用 xcodegen
+xcodegen generate
 ```
 
-### 3. 安裝 Rust 依賴（桌面應用）
+### 3. 開啟專案
 
 ```bash
-# 安裝 Rust
-curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
-
-# 編譯核心庫
-cargo build --release
+open Reclip.xcodeproj
 ```
 
-### 4. 安裝前端依賴
+### 4. 建構與執行
+
+在 Xcode 中選擇 `Reclip` scheme，按 `Cmd+R` 執行。
+
+或使用命令列：
 
 ```bash
-cd ui
-npm install
-```
-
-## 使用方式
-
-### CLI 模式
-
-```bash
-# 基本使用
-reclip input.wav -o output.wav
-
-# 多軌合併
-reclip track1.wav track2.wav --mode merge -o output.wav
-
-# 只分析不剪輯
-reclip input.wav --analyze-only --export-report report.json
-
-# 詳細輸出
-reclip input.wav -o output.wav -v
-```
-
-### 桌面應用
-
-```bash
-# 開發模式
-cd src-tauri
-cargo tauri dev
-
-# 編譯
-cargo tauri build
+make build
+make run
 ```
 
 ## 專案結構
 
 ```
 reclip/
-├── src/                    # Python 模組
-│   ├── preprocessor.py     # 音訊預處理
-│   ├── transcriber.py      # WhisperX 轉錄
-│   ├── analyzer.py         # Claude API 分析
-│   ├── editor.py           # 音訊剪輯
-│   ├── exporter.py         # 報告匯出
-│   └── cli.py              # 命令列介面
+├── Reclip/                   # macOS App
+│   ├── ReclipApp.swift       # App 入口
+│   ├── Info.plist            # App 資訊
+│   ├── Reclip.entitlements   # 權限設定
+│   └── Assets.xcassets/      # 資源檔
 │
-├── crates/
-│   └── reclip-core/        # Rust 核心庫
-│       └── src/
-│           ├── audio.rs    # 音訊處理
-│           ├── editor.rs   # 剪輯器
-│           ├── exporter.rs # 匯出器
-│           ├── types.rs    # 類型定義
-│           └── python.rs   # PyO3 綁定
+├── ReclipKit/                # Swift Package
+│   ├── Sources/
+│   │   ├── ReclipCore/       # 核心邏輯
+│   │   │   ├── Models/       # 資料模型
+│   │   │   ├── AudioEditor/  # 音訊編輯
+│   │   │   └── Exporters/    # 匯出功能
+│   │   ├── ReclipASR/        # 語音辨識
+│   │   ├── ReclipLLM/        # LLM 整合
+│   │   └── ReclipUI/         # UI 元件
+│   └── Tests/
 │
-├── src-tauri/              # Tauri 桌面應用
-│   └── src/
-│       └── main.rs
+├── scripts/
+│   └── build-dmg.sh          # DMG 建構腳本
 │
-└── ui/                     # 前端 (Vue 3)
-    └── src/
-        └── App.vue
+├── docs/
+│   ├── SWIFT_FEASIBILITY.md  # 技術可行性報告
+│   ├── DESIGN_GUIDELINES.md  # 設計規範
+│   └── APP_STORE_COMPLIANCE.md
+│
+├── project.yml               # XcodeGen 配置
+├── Makefile                  # 建構命令
+└── README.md
+```
+
+## 開發命令
+
+```bash
+# 設定開發環境（首次使用）
+make setup
+
+# 生成 Xcode 專案
+make generate
+
+# Debug 建構
+make build
+
+# Release 建構
+make build-release
+
+# 建構並執行
+make run
+
+# 執行測試
+make test
+
+# 建立 DMG
+make dmg
+
+# 清理
+make clean
+
+# 格式化程式碼
+make format
+
+# Lint 檢查
+make lint
+```
+
+## AI 設定
+
+### Claude API（雲端）
+
+1. 前往 [Anthropic Console](https://console.anthropic.com/) 取得 API Key
+2. 在 App 設定中貼上 API Key
+3. 選擇模型（建議使用 Claude Sonnet 4）
+
+### Ollama（本地）
+
+1. 安裝 Ollama: `brew install ollama`
+2. 下載模型: `ollama pull llama3.2`
+3. 啟動服務: `ollama serve`
+4. 在 App 設定中選擇 Ollama
+
+## 建立 DMG
+
+```bash
+# 完整建構流程
+./scripts/build-dmg.sh release
+
+# 開發模式建構
+./scripts/build-dmg.sh dev
+
+# 清理
+./scripts/build-dmg.sh clean
+```
+
+### 公證（可選）
+
+```bash
+export TEAM_ID=your_team_id
+export APPLE_ID=your@email.com
+export APPLE_PASSWORD=your-app-specific-password
+
+./scripts/build-dmg.sh release
+```
+
+## 架構
+
+```
+┌──────────────────────────────────────────────────────────────┐
+│                        Reclip App                             │
+│  ┌────────────────────────────────────────────────────────┐  │
+│  │                     ReclipUI                            │  │
+│  │  ┌──────────┐ ┌──────────┐ ┌───────────────────────┐   │  │
+│  │  │ContentView│ │SettingsView│ │GlassComponents      │   │  │
+│  │  └──────────┘ └──────────┘ └───────────────────────┘   │  │
+│  └────────────────────────────────────────────────────────┘  │
+│                             │                                 │
+│  ┌──────────────────────────┼─────────────────────────────┐  │
+│  │                     ReclipCore                          │  │
+│  │  ┌──────────┐ ┌──────────┐ ┌──────────┐                │  │
+│  │  │ Models   │ │AudioEditor│ │ Exporters │                │  │
+│  │  └──────────┘ └──────────┘ └──────────┘                │  │
+│  └────────────────────────────────────────────────────────┘  │
+│                             │                                 │
+│  ┌────────────┐      ┌─────────────┐                         │
+│  │ ReclipASR  │      │  ReclipLLM  │                         │
+│  │ WhisperKit │      │ Claude/Ollama│                         │
+│  └────────────┘      └─────────────┘                         │
+└──────────────────────────────────────────────────────────────┘
 ```
 
 ## 移除類型
 
-1. **filler** - 語氣詞、填充詞 (嗯、啊、呃、um, uh)
-2. **repeat** - 重複的詞語或片語
-3. **restart** - 句子重新開始
-4. **mouth_noise** - 唇齒音或雜音
-5. **long_pause** - 超過 1.5 秒的停頓
+| 類型 | 說明 | 範例 |
+|------|------|------|
+| **filler** | 語氣詞、填充詞 | 嗯、啊、呃、um, uh |
+| **repeat** | 重複的詞語或片語 | 我我我要說 |
+| **restart** | 句子重新開始 | 這個... 那個功能是... |
+| **mouthNoise** | 唇齒音或雜音 | 咂嘴聲、吸氣聲 |
+| **longPause** | 超過 1.5 秒的停頓 | [silence] |
 
 ## 匯出格式
 
@@ -133,8 +202,15 @@ reclip/
 
 ## API 費用估算
 
-- Claude API: 約 $0.03-0.05/小時音訊
-- WhisperX: 本地運行，免費
+- **Claude API**: 約 $0.03-0.05/小時音訊
+- **Ollama**: 本地運行，完全免費
+- **WhisperKit**: 本地運行，完全免費
+
+---
+
+## 舊版本
+
+Python + Rust + Tauri 版本保留在 `claude/podcast-auto-editor-TGVdX` 分支。
 
 ## 授權
 
