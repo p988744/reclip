@@ -19,6 +19,37 @@ public enum GlassStyle {
 
     /// 動畫時長
     public static let animationDuration: Double = 0.3
+
+    /// Morphing 間距
+    public static let morphingSpacing: CGFloat = 30
+}
+
+// MARK: - Glass Effect Modifier (Accessibility-aware)
+
+/// 無障礙感知的 Glass Effect 修飾器
+struct AccessibleGlassModifier<S: Shape>: ViewModifier {
+    @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
+
+    let glass: Glass
+    let shape: S
+
+    func body(content: Content) -> some View {
+        content
+            .glassEffect(
+                reduceTransparency ? .identity : glass,
+                in: shape
+            )
+    }
+}
+
+extension View {
+    /// 套用無障礙感知的 Glass Effect
+    public func accessibleGlassEffect<S: Shape>(
+        _ glass: Glass = .regular,
+        in shape: S
+    ) -> some View {
+        modifier(AccessibleGlassModifier(glass: glass, shape: shape))
+    }
 }
 
 // MARK: - Glass Panel
@@ -78,6 +109,8 @@ public struct GlassCard<Content: View>: View {
 
 /// 玻璃按鈕樣式
 public struct GlassButtonStyle: ButtonStyle {
+    @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
+
     let tint: Color?
 
     public init(tint: Color? = nil) {
@@ -86,6 +119,7 @@ public struct GlassButtonStyle: ButtonStyle {
 
     public func makeBody(configuration: Configuration) -> some View {
         configuration.label
+            .font(.body.weight(.semibold))  // HIG: 使用粗體增加可讀性
             .padding(.horizontal, 20)
             .padding(.vertical, 12)
             .background {
@@ -93,11 +127,13 @@ public struct GlassButtonStyle: ButtonStyle {
                     .fill(.regularMaterial)
             }
             .glassEffect(
-                tint.map { .regular.tint($0) } ?? .regular,
+                reduceTransparency
+                    ? .identity
+                    : (tint.map { .regular.tint($0).interactive() } ?? .regular.interactive()),
                 in: .capsule
             )
             .scaleEffect(configuration.isPressed ? 0.96 : 1.0)
-            .animation(.spring(duration: 0.2), value: configuration.isPressed)
+            .animation(.bouncy(duration: 0.2), value: configuration.isPressed)  // HIG: 使用 bouncy
     }
 }
 
@@ -210,6 +246,8 @@ public struct GlassProgress: View {
 
 /// 玻璃徽章
 public struct GlassBadge: View {
+    @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
+
     let text: String
     let color: Color
 
@@ -220,14 +258,40 @@ public struct GlassBadge: View {
 
     public var body: some View {
         Text(text)
-            .font(.caption.weight(.medium))
+            .font(.caption.weight(.semibold))  // HIG: 使用粗體
+            .foregroundStyle(.primary)
             .padding(.horizontal, 8)
             .padding(.vertical, 4)
             .background {
                 Capsule()
                     .fill(.ultraThinMaterial)
             }
-            .glassEffect(.regular.tint(color), in: .capsule)
+            .glassEffect(
+                reduceTransparency ? .identity : .regular.tint(color),
+                in: .capsule
+            )
+    }
+}
+
+// MARK: - Glass Effect Container
+
+/// Glass Effect 容器（支援 morphing 轉場）
+public struct GlassContainer<Content: View>: View {
+    let spacing: CGFloat
+    let content: Content
+
+    public init(
+        spacing: CGFloat = GlassStyle.morphingSpacing,
+        @ViewBuilder content: () -> Content
+    ) {
+        self.spacing = spacing
+        self.content = content()
+    }
+
+    public var body: some View {
+        GlassEffectContainer(spacing: spacing) {
+            content
+        }
     }
 }
 
