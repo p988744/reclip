@@ -1,8 +1,15 @@
 //! 音訊處理模組
 
+use std::fs::File;
 use std::path::Path;
 
 use hound::{WavReader, WavSpec, WavWriter};
+use symphonia::core::audio::SampleBuffer;
+use symphonia::core::codecs::DecoderOptions;
+use symphonia::core::formats::FormatOptions;
+use symphonia::core::io::MediaSourceStream;
+use symphonia::core::meta::MetadataOptions;
+use symphonia::core::probe::Hint;
 use thiserror::Error;
 
 use crate::AudioInfo;
@@ -24,6 +31,9 @@ pub enum AudioError {
 
     #[error("重取樣錯誤: {0}")]
     Resample(String),
+
+    #[error("解碼錯誤: {0}")]
+    Decode(String),
 }
 
 /// 音訊樣本資料
@@ -71,16 +81,80 @@ impl AudioProcessor {
             return Err(AudioError::FileNotFound(path.display().to_string()));
         }
 
-        let reader = WavReader::open(path)?;
-        let spec = reader.spec();
-        let duration = reader.duration() as f64 / spec.sample_rate as f64;
+        let extension = path
+            .extension()
+            .and_then(|e| e.to_str())
+            .map(|e| e.to_lowercase());
+
+        // Use hound for WAV files (faster)
+        if extension.as_deref() == Some("wav") {
+            let reader = WavReader::open(path)?;
+            let spec = reader.spec();
+            let duration = reader.duration() as f64 / spec.sample_rate as f64;
+
+            return Ok(AudioInfo {
+                path: path.display().to_string(),
+                duration,
+                sample_rate: spec.sample_rate,
+                channels: spec.channels,
+                bits_per_sample: spec.bits_per_sample,
+            });
+        }
+
+        // Use symphonia for other formats
+        self.get_info_symphonia(path)
+    }
+
+    /// 使用 symphonia 取得音訊資訊
+    fn get_info_symphonia<P: AsRef<Path>>(&self, path: P) -> Result<AudioInfo, AudioError> {
+        let path = path.as_ref();
+        let file = File::open(path)?;
+        let mss = MediaSourceStream::new(Box::new(file), Default::default());
+
+        let mut hint = Hint::new();
+        if let Some(ext) = path.extension().and_then(|e| e.to_str()) {
+            hint.with_extension(ext);
+        }
+
+        let probed = symphonia::default::get_probe()
+            .format(&hint, mss, &FormatOptions::default(), &MetadataOptions::default())
+            .map_err(|e| AudioError::Decode(format!("無法探測格式: {}", e)))?;
+
+        let format = probed.format;
+        let track = format
+            .tracks()
+            .iter()
+            .find(|t| t.codec_params.codec != symphonia::core::codecs::CODEC_TYPE_NULL)
+            .ok_or_else(|| AudioError::Decode("找不到音訊軌道".to_string()))?;
+
+        let codec_params = &track.codec_params;
+
+        let sample_rate = codec_params
+            .sample_rate
+            .ok_or_else(|| AudioError::Decode("無法取得取樣率".to_string()))?;
+
+        let channels = codec_params
+            .channels
+            .map(|c| c.count() as u16)
+            .unwrap_or(2);
+
+        let bits_per_sample = codec_params
+            .bits_per_sample
+            .unwrap_or(16) as u16;
+
+        // Calculate duration from time base and n_frames
+        let duration = if let Some(n_frames) = codec_params.n_frames {
+            n_frames as f64 / sample_rate as f64
+        } else {
+            0.0
+        };
 
         Ok(AudioInfo {
             path: path.display().to_string(),
             duration,
-            sample_rate: spec.sample_rate,
-            channels: spec.channels,
-            bits_per_sample: spec.bits_per_sample,
+            sample_rate,
+            channels,
+            bits_per_sample,
         })
     }
 
@@ -98,9 +172,111 @@ impl AudioProcessor {
 
         match extension.as_deref() {
             Some("wav") => self.load_wav(path),
+            Some("mp3") | Some("m4a") | Some("aac") | Some("flac") | Some("ogg") => {
+                self.load_symphonia(path)
+            }
             Some(ext) => Err(AudioError::UnsupportedFormat(ext.to_string())),
             None => Err(AudioError::UnsupportedFormat("unknown".to_string())),
         }
+    }
+
+    /// 使用 symphonia 載入音訊檔案
+    fn load_symphonia<P: AsRef<Path>>(&self, path: P) -> Result<AudioData, AudioError> {
+        let path = path.as_ref();
+        let file = File::open(path)?;
+        let mss = MediaSourceStream::new(Box::new(file), Default::default());
+
+        let mut hint = Hint::new();
+        if let Some(ext) = path.extension().and_then(|e| e.to_str()) {
+            hint.with_extension(ext);
+        }
+
+        let probed = symphonia::default::get_probe()
+            .format(&hint, mss, &FormatOptions::default(), &MetadataOptions::default())
+            .map_err(|e| AudioError::Decode(format!("無法探測格式: {}", e)))?;
+
+        let mut format = probed.format;
+
+        let track = format
+            .tracks()
+            .iter()
+            .find(|t| t.codec_params.codec != symphonia::core::codecs::CODEC_TYPE_NULL)
+            .ok_or_else(|| AudioError::Decode("找不到音訊軌道".to_string()))?;
+
+        let track_id = track.id;
+        let codec_params = track.codec_params.clone();
+
+        let sample_rate = codec_params
+            .sample_rate
+            .ok_or_else(|| AudioError::Decode("無法取得取樣率".to_string()))?;
+
+        let channels = codec_params
+            .channels
+            .map(|c| c.count())
+            .unwrap_or(2);
+
+        let mut decoder = symphonia::default::get_codecs()
+            .make(&codec_params, &DecoderOptions::default())
+            .map_err(|e| AudioError::Decode(format!("無法建立解碼器: {}", e)))?;
+
+        let mut all_samples: Vec<f32> = Vec::new();
+
+        loop {
+            let packet = match format.next_packet() {
+                Ok(p) => p,
+                Err(symphonia::core::errors::Error::IoError(ref e))
+                    if e.kind() == std::io::ErrorKind::UnexpectedEof =>
+                {
+                    break;
+                }
+                Err(e) => {
+                    tracing::warn!("解碼警告: {}", e);
+                    continue;
+                }
+            };
+
+            if packet.track_id() != track_id {
+                continue;
+            }
+
+            let decoded = match decoder.decode(&packet) {
+                Ok(d) => d,
+                Err(e) => {
+                    tracing::warn!("解碼封包錯誤: {}", e);
+                    continue;
+                }
+            };
+
+            let spec = *decoded.spec();
+            let duration = decoded.capacity() as u64;
+
+            let mut sample_buf = SampleBuffer::<f32>::new(duration, spec);
+            sample_buf.copy_interleaved_ref(decoded);
+
+            let samples = sample_buf.samples();
+
+            // Convert to mono
+            if channels == 1 {
+                all_samples.extend_from_slice(samples);
+            } else {
+                for chunk in samples.chunks(channels) {
+                    let sum: f32 = chunk.iter().sum();
+                    all_samples.push(sum / channels as f32);
+                }
+            }
+        }
+
+        // Resample if needed
+        let final_samples = if sample_rate != self.target_sample_rate {
+            self.resample(&all_samples, sample_rate, self.target_sample_rate)?
+        } else {
+            all_samples
+        };
+
+        Ok(AudioData {
+            samples: final_samples,
+            sample_rate: self.target_sample_rate,
+        })
     }
 
     /// 載入 WAV 檔案

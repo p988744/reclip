@@ -3,6 +3,11 @@ resolver = "2"
 members = [
     "src-tauri",
     "crates/reclip-core",
+    "crates/reclip-asr",
+    "crates/reclip-diarization",
+    "crates/reclip-models",
+    "crates/reclip-waveform",
+    "crates/reclip-llm",
 ]
 
 [workspace.package]
@@ -14,6 +19,7 @@ authors = ["reclip"]
 [workspace.dependencies]
 # Async runtime
 tokio = { version = "1.35", features = ["full"] }
+futures = "0.3"
 
 # Audio processing
 hound = "3.5"
@@ -40,7 +46,10 @@ tauri = { version = "2.1", features = [] }
 tauri-build = "2.0"
 
 # HTTP client (for Claude API)
-reqwest = { version = "0.11", features = ["json"] }
+reqwest = { version = "0.12", features = ["json", "stream"] }
+
+# Async trait helpers
+trait-variant = "0.1"
 
 # Time
 chrono = { version = "0.4", features = ["serde"] }
@@ -49,3 +58,8 @@ chrono = { version = "0.4", features = ["serde"] }
 lto = true
 codegen-units = 1
 strip = true
+
+# Force ort version to match pyannote-rs requirements
+[patch.crates-io]
+ort = { git = "https://github.com/pykeio/ort", tag = "v2.0.0-rc.10" }
+ort-sys = { git = "https://github.com/pykeio/ort", tag = "v2.0.0-rc.10" }

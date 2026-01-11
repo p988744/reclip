@@ -1,0 +1,34 @@
+[package]
+name = "reclip-waveform"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Waveform generation for reclip"
+
+[dependencies]
+# Core types
+reclip-core = { path = "../reclip-core" }
+
+# Audio processing
+symphonia = { workspace = true }
+hound = { workspace = true }
+
+# Async runtime
+tokio = { workspace = true }
+
+# Serialization
+serde = { workspace = true }
+serde_json = { workspace = true }
+
+# Error handling
+thiserror = { workspace = true }
+
+# Logging
+tracing = { workspace = true }
+
+# File system
+directories = "5.0"
+
+# Hash for cache keys
+sha2 = "0.10"
+hex = "0.4"

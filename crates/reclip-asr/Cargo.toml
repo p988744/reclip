@@ -1,0 +1,47 @@
+[package]
+name = "reclip-asr"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "ASR (Automatic Speech Recognition) module for reclip using whisper-rs"
+
+[dependencies]
+# Core types
+reclip-core = { path = "../reclip-core" }
+
+# Whisper
+whisper-rs = "0.14"
+
+# Async runtime
+tokio = { workspace = true }
+futures = "0.3"
+
+# Serialization
+serde = { workspace = true }
+serde_json = { workspace = true }
+
+# Error handling
+thiserror = { workspace = true }
+anyhow = { workspace = true }
+
+# Logging
+tracing = { workspace = true }
+
+# UUID
+uuid = { version = "1.6", features = ["v4", "serde"] }
+
+# Regex for text cleaning
+regex = "1.10"
+
+# Audio loading
+hound = { workspace = true }
+
+[target.'cfg(target_os = "macos")'.dependencies]
+# Metal acceleration on macOS
+whisper-rs = { version = "0.14", features = ["metal"] }
+
+[features]
+default = []
+metal = ["whisper-rs/metal"]
+coreml = ["whisper-rs/coreml"]
+cuda = ["whisper-rs/cuda"]

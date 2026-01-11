@@ -9,13 +9,21 @@ description = "Podcast 自動剪輯桌面應用"
 tauri-build = { workspace = true, features = [] }
 
 [dependencies]
-tauri = { workspace = true, features = ["devtools"] }
+tauri = { workspace = true, features = ["devtools", "protocol-asset"] }
 tauri-plugin-shell = "2"
 tauri-plugin-dialog = "2"
 tauri-plugin-fs = "2"
 
-# Core library
+# Core libraries
 reclip-core = { path = "../crates/reclip-core" }
+reclip-asr = { path = "../crates/reclip-asr" }
+reclip-diarization = { path = "../crates/reclip-diarization" }
+reclip-models = { path = "../crates/reclip-models" }
+reclip-waveform = { path = "../crates/reclip-waveform" }
+reclip-llm = { path = "../crates/reclip-llm" }
+
+# Secrets management
+secrecy = "0.8"
 
 # Async runtime
 tokio = { workspace = true }
