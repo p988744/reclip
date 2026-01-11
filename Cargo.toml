@@ -1,0 +1,17 @@
+[package]
+name = "reclip"
+version = "0.1.0"
+edition = "2024"
+authors = ["reclip team"]
+description = "AI-powered podcast auto-editor"
+license = "MIT"
+repository = "https://github.com/p988744/reclip"
+
+[dependencies]
+
+[dev-dependencies]
+
+[profile.release]
+lto = true
+codegen-units = 1
+strip = true
