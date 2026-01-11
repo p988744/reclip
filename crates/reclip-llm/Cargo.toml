@@ -1,0 +1,39 @@
+[package]
+name = "reclip-llm"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "LLM integration for reclip (Claude API, Ollama)"
+
+[dependencies]
+# Core types
+reclip-core = { path = "../reclip-core" }
+
+# Async runtime
+tokio = { workspace = true }
+futures = { workspace = true }
+
+# HTTP client
+reqwest = { workspace = true }
+
+# Serialization
+serde = { workspace = true }
+serde_json = { workspace = true }
+
+# Error handling
+thiserror = { workspace = true }
+anyhow = { workspace = true }
+
+# Logging
+tracing = { workspace = true }
+
+# Async trait helpers
+trait-variant = { workspace = true }
+
+# Secrets
+secrecy = "0.8"
+
+[features]
+default = ["claude", "ollama"]
+claude = []
+ollama = []

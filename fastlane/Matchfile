@@ -1,0 +1,28 @@
+# Reclip Fastlane Match 配置
+# https://docs.fastlane.tools/actions/match/
+
+# 憑證儲存庫（私有 Git repo）
+git_url(ENV["MATCH_GIT_URL"] || "git@github.com:your-org/certificates.git")
+
+# 儲存類型
+storage_mode("git")
+
+# App Identifier
+app_identifier(["com.reclip.app"])
+
+# Apple ID
+username(ENV["APPLE_ID"] || "your@email.com")
+
+# Team ID
+team_id(ENV["TEAM_ID"] || "YOUR_TEAM_ID")
+
+# 平台
+platform("macos")
+
+# 唯讀模式（CI 使用）
+readonly(is_ci)
+
+# 憑證類型
+# type("development") # 開發
+# type("developer_id") # DMG 發行
+# type("appstore") # App Store

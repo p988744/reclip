@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <!-- 網路存取（Claude API、Ollama、模型下載） -->
+    <key>com.apple.security.network.client</key>
+    <true/>
+
+    <!-- Hardened Runtime（公證必要） -->
+    <key>com.apple.security.cs.allow-unsigned-executable-memory</key>
+    <false/>
+
+    <!-- 禁用 JIT（安全性） -->
+    <key>com.apple.security.cs.allow-jit</key>
+    <false/>
+
+    <!-- 禁用 DYLD 環境變數（安全性） -->
+    <key>com.apple.security.cs.allow-dyld-environment-variables</key>
+    <false/>
+</dict>
+</plist>

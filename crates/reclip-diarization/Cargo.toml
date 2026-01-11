@@ -1,0 +1,38 @@
+[package]
+name = "reclip-diarization"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Speaker diarization module for reclip using pyannote-rs"
+
+[dependencies]
+# Core types
+reclip-core = { path = "../reclip-core" }
+
+# Speaker diarization (using git for latest fixes)
+pyannote-rs = { git = "https://github.com/thewh1teagle/pyannote-rs", branch = "main" }
+
+# Async runtime
+tokio = { workspace = true }
+futures = { workspace = true }
+
+# Serialization
+serde = { workspace = true }
+serde_json = { workspace = true }
+
+# Error handling
+thiserror = { workspace = true }
+anyhow = { workspace = true }
+
+# Logging
+tracing = { workspace = true }
+
+# UUID
+uuid = { version = "1.6", features = ["v4", "serde"] }
+
+# Audio loading
+hound = { workspace = true }
+
+[features]
+default = []
+coreml = ["pyannote-rs/coreml"]

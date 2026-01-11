@@ -1,0 +1,196 @@
+# Reclip Fastlane 配置
+# https://docs.fastlane.tools
+
+default_platform(:mac)
+
+platform :mac do
+  # ═══════════════════════════════════════════════════════════
+  # 開發與測試
+  # ═══════════════════════════════════════════════════════════
+
+  desc "執行測試"
+  lane :test do
+    run_tests(
+      scheme: "Reclip",
+      destination: "platform=macOS",
+      clean: true
+    )
+  end
+
+  desc "建構 Debug 版本"
+  lane :build_debug do
+    build_mac_app(
+      scheme: "Reclip",
+      configuration: "Debug",
+      skip_codesigning: true,
+      skip_archive: true
+    )
+  end
+
+  # ═══════════════════════════════════════════════════════════
+  # Developer ID 發行（DMG）
+  # ═══════════════════════════════════════════════════════════
+
+  desc "建構並公證 DMG"
+  lane :release_dmg do
+    # 確保在乾淨狀態
+    ensure_git_status_clean
+
+    # 取得版本號
+    version = get_version_number(target: "Reclip")
+    build = get_build_number
+
+    # 建構 Archive
+    build_mac_app(
+      scheme: "Reclip",
+      configuration: "Release",
+      export_method: "developer-id",
+      output_directory: "./build",
+      output_name: "Reclip"
+    )
+
+    # 公證
+    notarize(
+      package: "./build/Reclip.app",
+      bundle_id: "com.reclip.app"
+    )
+
+    # 建立 DMG
+    dmg_path = create_dmg(
+      app_path: "./build/Reclip.app",
+      output_path: "./build/Reclip-#{version}.dmg"
+    )
+
+    # 公證 DMG
+    notarize(
+      package: dmg_path,
+      bundle_id: "com.reclip.app"
+    )
+
+    UI.success("DMG 已建立: #{dmg_path}")
+  end
+
+  # ═══════════════════════════════════════════════════════════
+  # App Store 發行
+  # ═══════════════════════════════════════════════════════════
+
+  desc "建構並上傳至 App Store Connect"
+  lane :release_appstore do
+    # 確保在乾淨狀態
+    ensure_git_status_clean
+
+    # 使用 App Store 版本的 entitlements
+    # 需要在 project.yml 中設定
+
+    # 建構 Archive
+    build_mac_app(
+      scheme: "Reclip",
+      configuration: "Release",
+      export_method: "app-store",
+      output_directory: "./build"
+    )
+
+    # 上傳至 App Store Connect
+    upload_to_app_store(
+      app_identifier: "com.reclip.app",
+      skip_metadata: true,
+      skip_screenshots: true,
+      precheck_include_in_app_purchases: false
+    )
+  end
+
+  desc "上傳至 TestFlight"
+  lane :beta do
+    build_mac_app(
+      scheme: "Reclip",
+      configuration: "Release",
+      export_method: "app-store",
+      output_directory: "./build"
+    )
+
+    upload_to_testflight(
+      app_identifier: "com.reclip.app",
+      skip_waiting_for_build_processing: true
+    )
+  end
+
+  # ═══════════════════════════════════════════════════════════
+  # 憑證管理
+  # ═══════════════════════════════════════════════════════════
+
+  desc "同步憑證與 Provisioning Profiles"
+  lane :sync_certs do
+    # 開發憑證
+    match(
+      type: "development",
+      app_identifier: "com.reclip.app",
+      readonly: true
+    )
+
+    # Developer ID（DMG 發行）
+    match(
+      type: "developer_id",
+      app_identifier: "com.reclip.app",
+      readonly: true
+    )
+
+    # App Store
+    match(
+      type: "appstore",
+      app_identifier: "com.reclip.app",
+      readonly: true
+    )
+  end
+
+  desc "建立新憑證"
+  lane :create_certs do
+    match(
+      type: "development",
+      app_identifier: "com.reclip.app"
+    )
+
+    match(
+      type: "developer_id",
+      app_identifier: "com.reclip.app"
+    )
+
+    match(
+      type: "appstore",
+      app_identifier: "com.reclip.app"
+    )
+  end
+
+  # ═══════════════════════════════════════════════════════════
+  # 版本管理
+  # ═══════════════════════════════════════════════════════════
+
+  desc "增加版本號"
+  lane :bump_version do |options|
+    bump_type = options[:type] || "patch"
+    increment_version_number(
+      bump_type: bump_type
+    )
+    increment_build_number
+  end
+
+  # ═══════════════════════════════════════════════════════════
+  # 輔助方法
+  # ═══════════════════════════════════════════════════════════
+
+  private_lane :create_dmg do |options|
+    app_path = options[:app_path]
+    output_path = options[:output_path]
+
+    sh("create-dmg " \
+       "--volname 'Reclip' " \
+       "--window-pos 200 120 " \
+       "--window-size 660 400 " \
+       "--icon-size 100 " \
+       "--icon 'Reclip.app' 160 185 " \
+       "--app-drop-link 500 185 " \
+       "'#{output_path}' " \
+       "'#{app_path}'")
+
+    output_path
+  end
+end
